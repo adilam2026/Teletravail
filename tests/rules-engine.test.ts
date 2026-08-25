@@ -301,6 +301,56 @@ describe("Remplacement intelligent (quota atteint)", () => {
   });
 });
 
+describe("Pont vendredi / lundi (semaines consécutives)", () => {
+  it("lundi est bloqué si le vendredi précédent est déjà en télétravail", () => {
+    const result = evaluateWeek(baseInput({ adjacentSelections: { previousFriday: true, nextMonday: false } }));
+    const mon = result.days.find((d) => d.date === MON)!;
+    expect(mon.allowed).toBe(false);
+    expect(mon.ruleCode).toBe("FRIDAY_MONDAY_BRIDGE");
+    expect(mon.swapCandidates).toBeNull();
+  });
+
+  it("vendredi est bloqué si le lundi suivant est déjà en télétravail", () => {
+    const employee: EmployeeContext = { ...internalEmployee, weeklyQuota: 3 };
+    const result = evaluateWeek(baseInput({ employee, adjacentSelections: { previousFriday: false, nextMonday: true } }));
+    const fri = result.days.find((d) => d.date === FRI)!;
+    expect(fri.allowed).toBe(false);
+    expect(fri.ruleCode).toBe("FRIDAY_MONDAY_BRIDGE");
+  });
+
+  it("le blocage prime sur la logique de remplacement (quota atteint) : jamais de swapCandidates", () => {
+    const result = evaluateWeek(
+      baseInput({ employee: externalEmployee, selectedDates: [TUE], adjacentSelections: { previousFriday: false, nextMonday: true } })
+    );
+    const fri = result.days.find((d) => d.date === FRI)!;
+    expect(fri.allowed).toBe(false);
+    expect(fri.ruleCode).toBe("FRIDAY_MONDAY_BRIDGE");
+    expect(fri.swapCandidates).toBeNull();
+  });
+
+  it("désactivée dans les réglages, la combinaison est autorisée", () => {
+    const settings: RuleSettings = { ...DEFAULT_RULE_SETTINGS, fridayMondayBridgeForbidden: false };
+    const result = evaluateWeek(baseInput({ settings, adjacentSelections: { previousFriday: true, nextMonday: false } }));
+    const mon = result.days.find((d) => d.date === MON)!;
+    expect(mon.allowed).toBe(true);
+  });
+
+  it("garde-fou : lève une alerte bloquante si la combinaison est déjà sélectionnée des deux côtés", () => {
+    const employee: EmployeeContext = { ...internalEmployee, weeklyQuota: 3 };
+    const result = evaluateWeek(
+      baseInput({ employee, selectedDates: [MON], adjacentSelections: { previousFriday: true, nextMonday: false } })
+    );
+    expect(result.alerts.map((a) => a.ruleCode)).toContain("FRIDAY_MONDAY_BRIDGE");
+    expect(result.canSubmit).toBe(false);
+  });
+
+  it("sans donnée sur les semaines adjacentes, aucun blocage n'est appliqué", () => {
+    const result = evaluateWeek(baseInput());
+    const mon = result.days.find((d) => d.date === MON)!;
+    expect(mon.allowed).toBe(true);
+  });
+});
+
 describe("Présence d'équipe", () => {
   it("calcule le pourcentage de présence au bureau et signale le seuil bas", () => {
     const result = evaluateTeamPresence(

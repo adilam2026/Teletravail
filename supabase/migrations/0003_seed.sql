@@ -10,6 +10,7 @@ insert into telework_rules (key, value, description) values
   ('quota_external', '1', 'Nombre maximum de jours de télétravail / semaine pour un collaborateur externe'),
   ('consecutive_days_forbidden', 'true', 'Interdire deux jours de télétravail consécutifs'),
   ('monday_friday_forbidden', 'true', 'Interdire la combinaison lundi + vendredi la même semaine'),
+  ('friday_monday_bridge_forbidden', 'true', 'Interdire le pont vendredi (semaine N) + lundi (semaine N+1)'),
   ('return_after_absence_forbidden', 'true', 'Interdire le télétravail le jour de reprise après une absence'),
   ('return_after_bridge_enabled', 'true', 'Étendre la règle de reprise à travers un week-end/jour férié (dernier jour ouvré précédent)'),
   ('rotation_enabled', 'true', 'Activer le contrôle de rotation des jours de télétravail'),

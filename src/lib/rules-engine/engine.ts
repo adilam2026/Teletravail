@@ -120,12 +120,13 @@ interface AdjacencyViolation {
   reason: string;
 }
 
-/** Le jour `dates[idx]` entrerait-il en conflit (consécutif / lundi+vendredi) avec `candidateSelected` ? */
+/** Le jour `dates[idx]` entrerait-il en conflit (consécutif / lundi+vendredi / pont inter-semaines) avec `candidateSelected` ? */
 function adjacencyViolation(
   idx: number,
   dates: string[],
   candidateSelected: Set<string>,
-  settings: RuleSettings
+  settings: RuleSettings,
+  adjacentSelections?: { previousFriday: boolean; nextMonday: boolean }
 ): AdjacencyViolation | null {
   const date = dates[idx]!;
   const mondayDate = dates[0]!;
@@ -148,6 +149,15 @@ function adjacencyViolation(
     }
   }
 
+  if (settings.fridayMondayBridgeForbidden) {
+    if (date === mondayDate && adjacentSelections?.previousFriday) {
+      return { ruleCode: "FRIDAY_MONDAY_BRIDGE", reason: "Pont interdit : vendredi dernier était déjà en télétravail" };
+    }
+    if (date === fridayDate && adjacentSelections?.nextMonday) {
+      return { ruleCode: "FRIDAY_MONDAY_BRIDGE", reason: "Pont interdit : lundi prochain est déjà en télétravail" };
+    }
+  }
+
   return null;
 }
 
@@ -162,13 +172,14 @@ function findSwapCandidates(
   idx: number,
   dates: string[],
   selected: Set<string>,
-  settings: RuleSettings
+  settings: RuleSettings,
+  adjacentSelections?: { previousFriday: boolean; nextMonday: boolean }
 ): string[] {
   const candidates: string[] = [];
   for (const s of selected) {
     const trial = new Set(selected);
     trial.delete(s);
-    if (!adjacencyViolation(idx, dates, trial, settings)) candidates.push(s);
+    if (!adjacencyViolation(idx, dates, trial, settings, adjacentSelections)) candidates.push(s);
   }
   return candidates;
 }
@@ -212,6 +223,25 @@ export function evaluateWeek(input: WeekEvaluationInput): WeekEvaluationResult {
       return { date, weekday, selected: true, allowed: true, reason: null, ruleCode: null, severity: null, swapCandidates: null };
     }
 
+    // Pont vendredi / lundi suivant : dépend d'une donnée hors de cette
+    // semaine (le jour adjacent, dans une autre semaine), donc jamais
+    // résoluble par un remplacement intra-semaine — se vérifie avant la
+    // logique de quota pour ne pas afficher un message "quota atteint"
+    // trompeur quand quota et pont sont indépendants.
+    const bridgeViolation = adjacencyViolation(idx, dates, selected, settings, input.adjacentSelections);
+    if (bridgeViolation && bridgeViolation.ruleCode === "FRIDAY_MONDAY_BRIDGE") {
+      return {
+        date,
+        weekday,
+        selected: false,
+        allowed: false,
+        reason: bridgeViolation.reason,
+        ruleCode: bridgeViolation.ruleCode,
+        severity: "blocking",
+        swapCandidates: null,
+      };
+    }
+
     // Jour structurellement éligible mais pas encore sélectionné : simuler
     // ce qui se passerait si l'utilisateur cliquait dessus.
     if (selected.size < quota) {
@@ -232,7 +262,7 @@ export function evaluateWeek(input: WeekEvaluationInput): WeekEvaluationResult {
     }
 
     // Quota atteint : chercher un remplacement intelligent avant de bloquer sec.
-    const swapCandidates = findSwapCandidates(idx, dates, selected, settings);
+    const swapCandidates = findSwapCandidates(idx, dates, selected, settings, input.adjacentSelections);
     if (swapCandidates.length === 0) {
       return {
         date,
@@ -287,6 +317,17 @@ export function evaluateWeek(input: WeekEvaluationInput): WeekEvaluationResult {
       ruleCode: "MONDAY_FRIDAY_COMBINATION",
       severity: "blocking",
       message: "Combinaison lundi + vendredi sélectionnée sur la même semaine",
+    });
+  }
+
+  if (
+    settings.fridayMondayBridgeForbidden &&
+    ((mondaySelected && input.adjacentSelections?.previousFriday) || (fridaySelected && input.adjacentSelections?.nextMonday))
+  ) {
+    alerts.push({
+      ruleCode: "FRIDAY_MONDAY_BRIDGE",
+      severity: "blocking",
+      message: "Pont vendredi / lundi sélectionné entre deux semaines de télétravail",
     });
   }
 

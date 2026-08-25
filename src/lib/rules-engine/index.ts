@@ -10,6 +10,7 @@ export const DEFAULT_RULE_SETTINGS: RuleSettings = {
   quotaExternal: 1,
   consecutiveDaysForbidden: true,
   mondayFridayForbidden: true,
+  fridayMondayBridgeForbidden: true,
   returnAfterAbsenceForbidden: true,
   returnAfterBridgeEnabled: true,
   rotationEnabled: true,
@@ -45,6 +46,7 @@ export function parseRuleSettings(rows: { key: string; value: unknown }[]): Rule
     quotaExternal: num("quota_external", DEFAULT_RULE_SETTINGS.quotaExternal),
     consecutiveDaysForbidden: bool("consecutive_days_forbidden", DEFAULT_RULE_SETTINGS.consecutiveDaysForbidden),
     mondayFridayForbidden: bool("monday_friday_forbidden", DEFAULT_RULE_SETTINGS.mondayFridayForbidden),
+    fridayMondayBridgeForbidden: bool("friday_monday_bridge_forbidden", DEFAULT_RULE_SETTINGS.fridayMondayBridgeForbidden),
     returnAfterAbsenceForbidden: bool(
       "return_after_absence_forbidden",
       DEFAULT_RULE_SETTINGS.returnAfterAbsenceForbidden

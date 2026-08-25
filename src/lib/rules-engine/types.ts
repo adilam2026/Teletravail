@@ -8,6 +8,7 @@ export type RuleCode =
   | "MAX_WEEKLY_QUOTA"
   | "CONSECUTIVE_REMOTE_DAYS"
   | "MONDAY_FRIDAY_COMBINATION"
+  | "FRIDAY_MONDAY_BRIDGE"
   | "RETURN_AFTER_ABSENCE"
   | "PUBLIC_HOLIDAY"
   | "MANDATORY_OFFICE_DAY"
@@ -39,6 +40,8 @@ export interface RuleSettings {
   quotaExternal: number;
   consecutiveDaysForbidden: boolean;
   mondayFridayForbidden: boolean;
+  /** Interdit vendredi (semaine N) + lundi (semaine N+1) : pas de pont week-end entre deux semaines de télétravail. */
+  fridayMondayBridgeForbidden: boolean;
   returnAfterAbsenceForbidden: boolean;
   returnAfterBridgeEnabled: boolean;
   rotationEnabled: boolean;
@@ -123,6 +126,14 @@ export interface WeekEvaluationInput {
   exceptions: ExceptionPeriod[];
   /** Jeux de jours (1-5) télétravaillés lors des N semaines précédentes, plus récent en premier. */
   priorWeeksSelections?: number[][];
+  /**
+   * Télétravail déjà posé sur les jours immédiatement adjacents à cette
+   * semaine, de l'autre côté du week-end : le vendredi de la semaine
+   * précédente et le lundi de la semaine suivante. Permet d'appliquer
+   * `fridayMondayBridgeForbidden` sans recharger les semaines voisines en
+   * entier.
+   */
+  adjacentSelections?: { previousFriday: boolean; nextMonday: boolean };
   /** Horodatage de l'évaluation (pour la date limite de soumission), ISO. */
   now?: string;
 }

@@ -23,6 +23,7 @@ export function RulesEditor({ initial }: { initial: RuleSettings }) {
         updateRuleSetting("quota_external", values.quotaExternal),
         updateRuleSetting("consecutive_days_forbidden", values.consecutiveDaysForbidden),
         updateRuleSetting("monday_friday_forbidden", values.mondayFridayForbidden),
+        updateRuleSetting("friday_monday_bridge_forbidden", values.fridayMondayBridgeForbidden),
         updateRuleSetting("return_after_absence_forbidden", values.returnAfterAbsenceForbidden),
         updateRuleSetting("return_after_bridge_enabled", values.returnAfterBridgeEnabled),
         updateRuleSetting("rotation_enabled", values.rotationEnabled),
@@ -59,6 +60,11 @@ export function RulesEditor({ initial }: { initial: RuleSettings }) {
         <h2 className="text-sm font-semibold text-slate-900">Règles de combinaison</h2>
         <Toggle label="Interdire les jours consécutifs" checked={values.consecutiveDaysForbidden} onChange={(v) => set("consecutiveDaysForbidden", v)} />
         <Toggle label="Interdire la combinaison lundi + vendredi" checked={values.mondayFridayForbidden} onChange={(v) => set("mondayFridayForbidden", v)} />
+        <Toggle
+          label="Interdire le pont vendredi (semaine N) + lundi (semaine N+1)"
+          checked={values.fridayMondayBridgeForbidden}
+          onChange={(v) => set("fridayMondayBridgeForbidden", v)}
+        />
       </section>
 
       <section className="card space-y-4">

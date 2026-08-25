@@ -133,6 +133,41 @@ export async function getPriorWeeksSelections(
   });
 }
 
+/**
+ * Télétravail déjà posé sur le vendredi précédent et le lundi suivant cette
+ * semaine — nécessaire à la règle "pont vendredi/lundi" (`fridayMondayBridgeForbidden`).
+ * Ne crée jamais de weekly_plan pour les semaines voisines : une semaine
+ * jamais ouverte n'a évidemment aucun jour sélectionné.
+ */
+export async function getAdjacentBridgeSelections(
+  supabase: DB,
+  employeeId: string,
+  weekStart: string
+): Promise<{ previousFriday: boolean; nextMonday: boolean }> {
+  const previousFridayDate = addDaysStr(weekStart, -3);
+  const previousWeekStart = addDaysStr(weekStart, -7);
+  const nextMondayDate = addDaysStr(weekStart, 7);
+
+  const { data: plans } = await supabase
+    .from("weekly_plans")
+    .select("id, week_start")
+    .eq("employee_id", employeeId)
+    .in("week_start", [previousWeekStart, nextMondayDate]);
+
+  const planIds = (plans ?? []).map((p) => p.id);
+  const { data: days } = planIds.length
+    ? await supabase.from("telework_days").select("weekly_plan_id, work_date").in("weekly_plan_id", planIds)
+    : { data: [] as { weekly_plan_id: string; work_date: string }[] };
+
+  const previousPlanId = plans?.find((p) => p.week_start === previousWeekStart)?.id;
+  const nextPlanId = plans?.find((p) => p.week_start === nextMondayDate)?.id;
+
+  return {
+    previousFriday: (days ?? []).some((d) => d.weekly_plan_id === previousPlanId && d.work_date === previousFridayDate),
+    nextMonday: (days ?? []).some((d) => d.weekly_plan_id === nextPlanId && d.work_date === nextMondayDate),
+  };
+}
+
 export async function getOrCreateWeeklyPlan(
   supabase: DB,
   employeeId: string,
@@ -222,12 +257,13 @@ export async function loadEmployeeWeek(
   const rangeStart = addDaysStr(weekStart, -BRIDGE_BUFFER_DAYS);
   const rangeEnd = addDaysStr(weekStart, 4 + BRIDGE_BUFFER_DAYS);
 
-  const [settings, plan, holidays, absences, exceptions] = await Promise.all([
+  const [settings, plan, holidays, absences, exceptions, adjacentSelections] = await Promise.all([
     getRuleSettings(supabase),
     getOrCreateWeeklyPlan(supabase, profile.id, weekStart),
     getHolidaysInRange(supabase, rangeStart, rangeEnd),
     getAbsencesForEmployee(supabase, profile.id, rangeStart, rangeEnd),
     getExceptionsFor(supabase, [profile.id], profile.squad_id ? [profile.squad_id] : [], weekStart, addDaysStr(weekStart, 4)),
+    getAdjacentBridgeSelections(supabase, profile.id, weekStart),
   ]);
 
   const quota = await getResolvedQuota(supabase, profile, settings);
@@ -248,6 +284,7 @@ export async function loadEmployeeWeek(
     absences,
     exceptions,
     priorWeeksSelections,
+    adjacentSelections,
     now: nowIso(),
   };
   const result = evaluateWeek(evaluationInput);

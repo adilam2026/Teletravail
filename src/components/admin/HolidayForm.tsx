@@ -11,6 +11,7 @@ export function CreateHolidayForm() {
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
+  const [durationDays, setDurationDays] = useState(1);
   const [type, setType] = useState<"national" | "religious" | "exceptional">("national");
   const [status, setStatus] = useState<"provisional" | "confirmed">("confirmed");
   const [error, setError] = useState<string | null>(null);
@@ -19,13 +20,14 @@ export function CreateHolidayForm() {
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await createHoliday({ name, date, type, status });
+      const result = await createHoliday({ name, date, type, status, durationDays });
       if (!result.ok) {
         setError(result.error ?? "Erreur");
         return;
       }
       setName("");
       setDate("");
+      setDurationDays(1);
       setOpen(false);
       router.refresh();
     });
@@ -46,8 +48,19 @@ export function CreateHolidayForm() {
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
       </div>
       <div>
-        <label className="label">Date</label>
+        <label className="label">Date de début</label>
         <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required />
+      </div>
+      <div>
+        <label className="label">Nombre de jours chômés</label>
+        <input
+          type="number"
+          min={1}
+          max={10}
+          className="input w-24"
+          value={durationDays}
+          onChange={(e) => setDurationDays(Math.max(1, Number(e.target.value)))}
+        />
       </div>
       <div>
         <label className="label">Type</label>

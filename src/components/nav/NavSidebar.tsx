@@ -10,6 +10,8 @@ export interface NavItem {
   label: string;
   icon: string;
   badge?: number;
+  /** Regroupe visuellement les items sous un intitulé (ex. "Mon équipe" / "Moi") — évite de mélanger vues personnelles et vues d'équipe dans une liste plate. */
+  section?: string;
 }
 
 export function NavSidebar({
@@ -60,27 +62,34 @@ export function NavSidebar({
         </div>
 
         <nav className="flex flex-col gap-1 px-3 py-4 lg:px-4">
-          {items.map((item) => {
+          {items.map((item, idx) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const showSectionHeader = !!item.section && item.section !== items[idx - 1]?.section;
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                  active ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <span>{item.icon}</span>
-                  {item.label}
-                </span>
-                {!!item.badge && (
-                  <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
-                    {item.badge}
-                  </span>
+              <div key={item.href}>
+                {showSectionHeader && (
+                  <p className={`px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400 ${idx > 0 ? "pt-4" : ""}`}>
+                    {item.section}
+                  </p>
                 )}
-              </Link>
+                <Link
+                  href={item.href}
+                  onClick={() => setOpen(false)}
+                  className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+                    active ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span>{item.icon}</span>
+                    {item.label}
+                  </span>
+                  {!!item.badge && (
+                    <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              </div>
             );
           })}
         </nav>

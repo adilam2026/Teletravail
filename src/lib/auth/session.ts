@@ -42,6 +42,6 @@ export function homePathForRole(role: AppRole): string {
   if (role === "admin") return "/admin/dashboard";
   if (role === "du_head") return "/du/overview";
   if (role === "tribe_lead") return "/tribe/overview";
-  if (role === "squad_lead") return "/squad/team";
+  if (role === "squad_lead") return "/squad/planning";
   return "/employee/agenda";
 }

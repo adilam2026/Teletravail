@@ -39,6 +39,7 @@ export default async function AgendaPage({ searchParams }: { searchParams: Promi
 
       <WeekGrid
         weekStart={weekStart}
+        planId={week.plan.id}
         evaluationInput={week.evaluationInput}
         badges={week.badges}
         editable={editable}

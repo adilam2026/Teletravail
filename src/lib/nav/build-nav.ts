@@ -19,29 +19,36 @@ const ROLE_LABELS: Record<ProfileRow["role"], string> = {
  * dupliquer cette logique dans 4 layouts différents.
  */
 export async function buildNavForRole(supabase: AppSupabaseClient, profile: ProfileRow): Promise<{ roleLabel: string; items: NavItem[] }> {
-  const items: NavItem[] = [{ href: "/employee/agenda", label: "Mon agenda", icon: "📅" }];
+  const isTeamLead = profile.role === "squad_lead" || profile.role === "tribe_lead" || profile.role === "du_head";
+  const items: NavItem[] = [];
 
-  if (profile.role === "squad_lead" || profile.role === "tribe_lead" || profile.role === "du_head") {
+  // Vue d'équipe d'abord (section 20 : c'est ce que la ligne managériale
+  // consulte en priorité en se connectant), puis vue personnelle ensuite —
+  // les deux sont clairement étiquetées pour ne pas se mélanger dans la
+  // même liste (retour utilisateur : "on se perd").
+  if (isTeamLead) {
     const pending = await countPendingValidations(supabase, profile);
     if (profile.role === "squad_lead") {
-      items.push({ href: "/squad/team", label: "Ma Squad", icon: "👥" });
-      items.push({ href: "/squad/planning", label: "Planning équipe", icon: "📆" });
-      items.push({ href: "/squad/validation", label: "À valider", icon: "✅", badge: pending });
-      items.push({ href: "/squad/absences", label: "Absences de la Squad", icon: "🌴" });
+      items.push({ href: "/squad/planning", label: "Planning équipe", icon: "📆", section: "Mon équipe" });
+      items.push({ href: "/squad/team", label: "Ma Squad", icon: "👥", section: "Mon équipe" });
+      items.push({ href: "/squad/validation", label: "À valider", icon: "✅", badge: pending, section: "Mon équipe" });
+      items.push({ href: "/squad/absences", label: "Absences de la Squad", icon: "🌴", section: "Mon équipe" });
     } else if (profile.role === "tribe_lead") {
-      items.push({ href: "/tribe/overview", label: "Ma Tribe", icon: "🧭" });
-      items.push({ href: "/tribe/validation", label: "À valider", icon: "✅", badge: pending });
+      items.push({ href: "/tribe/overview", label: "Ma Tribe", icon: "🧭", section: "Mon équipe" });
+      items.push({ href: "/tribe/validation", label: "À valider", icon: "✅", badge: pending, section: "Mon équipe" });
     } else {
-      items.push({ href: "/du/overview", label: "Ma DU", icon: "🏛️" });
-      items.push({ href: "/du/validation", label: "À valider", icon: "✅", badge: pending });
+      items.push({ href: "/du/overview", label: "Ma DU", icon: "🏛️", section: "Mon équipe" });
+      items.push({ href: "/du/validation", label: "À valider", icon: "✅", badge: pending, section: "Mon équipe" });
     }
   }
 
+  const personalSection = isTeamLead ? "Moi" : undefined;
   items.push(
-    { href: "/employee/weeks", label: "Mes semaines", icon: "🗂️" },
-    { href: "/employee/absences", label: "Mes absences", icon: "🌴" },
-    { href: "/employee/history", label: "Historique", icon: "🕘" },
-    { href: "/employee/profile", label: "Mon profil", icon: "👤" }
+    { href: "/employee/agenda", label: "Mon agenda", icon: "📅", section: personalSection },
+    { href: "/employee/weeks", label: "Mes semaines", icon: "🗂️", section: personalSection },
+    { href: "/employee/absences", label: "Mes absences", icon: "🌴", section: personalSection },
+    { href: "/employee/history", label: "Historique", icon: "🕘", section: personalSection },
+    { href: "/employee/profile", label: "Mon profil", icon: "👤", section: personalSection }
   );
 
   return { roleLabel: ROLE_LABELS[profile.role], items };

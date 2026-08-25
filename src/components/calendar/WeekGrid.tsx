@@ -8,10 +8,12 @@ import type { DayBadge } from "@/lib/data/planning";
 import { toggleTeleworkDay } from "@/lib/actions/weeks";
 import { ComplianceBadge, StatusBadge } from "@/components/StatusBadge";
 import { SubmitWeekButton } from "@/components/employee/SubmitWeekButton";
+import { RecallWeekButton } from "@/components/employee/RecallWeekButton";
 import type { PlanStatus } from "@/lib/supabase/database.types";
 
 export interface WeekGridProps {
   weekStart: string;
+  planId: string;
   evaluationInput: WeekEvaluationInput;
   badges: Record<string, DayBadge | null>;
   editable: boolean;
@@ -36,7 +38,7 @@ function dayLabel(dates: string[], date: string): string {
  * toast bref explique pourquoi (jamais de spinner bloquant, jamais de
  * rechargement de page).
  */
-export function WeekGrid({ weekStart, evaluationInput, badges, editable, planStatus }: WeekGridProps) {
+export function WeekGrid({ weekStart, planId, evaluationInput, badges, editable, planStatus }: WeekGridProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(evaluationInput.selectedDates));
   const [swapPrompt, setSwapPrompt] = useState<{ date: string; candidates: string[] } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -117,8 +119,11 @@ export function WeekGrid({ weekStart, evaluationInput, badges, editable, planSta
           <StatusBadge status={planStatus} />
           <ComplianceBadge compliance={result.compliance} />
         </div>
-        <div className="text-sm font-medium text-slate-600">
-          Télétravail : {result.selectedCount} / {result.quota} jour{result.quota > 1 ? "s" : ""}
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-slate-600">
+            Télétravail : {result.selectedCount} / {result.quota} jour{result.quota > 1 ? "s" : ""}
+          </span>
+          {planStatus === "submitted" && <RecallWeekButton planId={planId} />}
         </div>
       </div>
 

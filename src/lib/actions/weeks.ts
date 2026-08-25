@@ -152,6 +152,35 @@ export async function submitWeek(weekStart: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * Le collaborateur rappelle sa propre semaine tant qu'elle est seulement
+ * "soumise" (en attente de décision) : contrairement à la réouverture d'une
+ * semaine déjà validée, aucune approbation du validateur n'est nécessaire
+ * ici puisque rien n'a encore été décidé — la semaine repasse simplement en
+ * brouillon, modifiable.
+ */
+export async function recallWeek(planId: string): Promise<ActionResult> {
+  const { profile } = await requireUser();
+  const supabase = await createClient();
+
+  const { data: plan } = await supabase.from("weekly_plans").select("*").eq("id", planId).single();
+  if (!plan || plan.employee_id !== profile.id) return { ok: false, error: "Semaine introuvable." };
+  if (plan.status !== "submitted") return { ok: false, error: "Seule une semaine en attente de validation peut être rappelée." };
+
+  const { error } = await supabase
+    .from("weekly_plans")
+    .update({ status: "draft", submitted_at: null })
+    .eq("id", planId);
+  if (error) return { ok: false, error: "Rappel impossible." };
+
+  await logAudit({ action: "week_recalled", entityType: "weekly_plan", entityId: planId, oldValue: { status: "submitted" }, newValue: { status: "draft" } });
+
+  revalidatePath("/employee/agenda");
+  revalidatePath("/employee/weeks");
+  revalidateValidationViews();
+  return { ok: true };
+}
+
 async function decideWeek(
   planId: string,
   newStatus: "validated" | "rejected" | "needs_changes",

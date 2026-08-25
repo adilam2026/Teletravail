@@ -1,7 +1,7 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { ProfileRow } from "@/lib/supabase/database.types";
+import type { AppRole, ProfileRow } from "@/lib/supabase/database.types";
 
 export interface CurrentUser {
   authId: string;
@@ -31,15 +31,17 @@ export async function requireUser(): Promise<CurrentUser> {
   return user;
 }
 
-/** À utiliser en haut d'une page réservée à un rôle donné. */
-export async function requireRole(role: "admin" | "manager" | "employee"): Promise<CurrentUser> {
+/** À utiliser en haut d'une page réservée à un rôle donné (ou plusieurs, ex. écrans de validation partagés). */
+export async function requireRole(...roles: AppRole[]): Promise<CurrentUser> {
   const user = await requireUser();
-  if (user.profile.role !== role) redirect(homePathForRole(user.profile.role));
+  if (!roles.includes(user.profile.role)) redirect(homePathForRole(user.profile.role));
   return user;
 }
 
-export function homePathForRole(role: "admin" | "manager" | "employee"): string {
+export function homePathForRole(role: AppRole): string {
   if (role === "admin") return "/admin/dashboard";
-  if (role === "manager") return "/manager/team";
+  if (role === "du_head") return "/du/overview";
+  if (role === "tribe_lead") return "/tribe/overview";
+  if (role === "squad_lead") return "/squad/team";
   return "/employee/agenda";
 }

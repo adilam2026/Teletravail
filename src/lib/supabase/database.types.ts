@@ -9,7 +9,7 @@
  * `@supabase/supabase-js` (les colonnes remontent en `never`).
  */
 
-export type AppRole = "admin" | "manager" | "employee";
+export type AppRole = "admin" | "du_head" | "tribe_lead" | "squad_lead" | "employee";
 export type EmployeeTypeCode = "internal" | "external";
 export type AccountStatus = "active" | "inactive";
 export type PlanStatus = "draft" | "submitted" | "validated" | "rejected" | "needs_changes";
@@ -23,8 +23,8 @@ export type ExceptionTypeCode =
   | "company_event"
   | "seminar"
   | "custom_period";
-export type ExceptionScopeCode = "company" | "team" | "employee";
-export type AbsenceSourceCode = "manager" | "admin" | "employee" | "rh_import";
+export type ExceptionScopeCode = "company" | "squad" | "employee";
+export type AbsenceSourceCode = "hierarchy" | "admin" | "employee" | "rh_import";
 
 export type ProfileRow = {
   id: string;
@@ -34,8 +34,7 @@ export type ProfileRow = {
   email: string | null;
   role: AppRole;
   employee_type: EmployeeTypeCode | null;
-  manager_id: string | null;
-  team_id: string | null;
+  squad_id: string | null;
   status: AccountStatus;
   must_change_password: boolean;
   hire_date: string | null;
@@ -52,15 +51,14 @@ export type ProfileInsert = {
   email?: string | null;
   role?: AppRole;
   employee_type?: EmployeeTypeCode | null;
-  manager_id?: string | null;
-  team_id?: string | null;
+  squad_id?: string | null;
   status?: AccountStatus;
   must_change_password?: boolean;
   hire_date?: string | null;
   created_by?: string | null;
 }
 
-export type TeamRow = {
+export type OrganizationalUnitRow = {
   id: string;
   name: string;
   manager_id: string | null;
@@ -68,10 +66,60 @@ export type TeamRow = {
   created_at: string;
 }
 
-export type TeamInsert = {
+export type OrganizationalUnitInsert = {
   name: string;
   manager_id?: string | null;
   created_by?: string | null;
+}
+
+export type TribeRow = {
+  id: string;
+  name: string;
+  organizational_unit_id: string;
+  manager_id: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export type TribeInsert = {
+  name: string;
+  organizational_unit_id: string;
+  manager_id?: string | null;
+  created_by?: string | null;
+}
+
+export type SquadRow = {
+  id: string;
+  name: string;
+  tribe_id: string;
+  manager_id: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export type SquadInsert = {
+  name: string;
+  tribe_id: string;
+  manager_id?: string | null;
+  created_by?: string | null;
+}
+
+export type MembershipChangeRow = {
+  id: string;
+  profile_id: string;
+  previous_squad_id: string | null;
+  new_squad_id: string | null;
+  effective_date: string;
+  changed_by: string | null;
+  created_at: string;
+}
+
+export type MembershipChangeInsert = {
+  profile_id: string;
+  previous_squad_id?: string | null;
+  new_squad_id?: string | null;
+  effective_date?: string;
+  changed_by?: string | null;
 }
 
 export type RuleOverrideRow = {
@@ -192,7 +240,7 @@ export type CompanyExceptionRow = {
   start_date: string;
   end_date: string;
   scope: ExceptionScopeCode;
-  team_id: string | null;
+  squad_id: string | null;
   employee_id: string | null;
   comment: string | null;
   created_by: string | null;
@@ -205,7 +253,7 @@ export type CompanyExceptionInsert = {
   start_date: string;
   end_date: string;
   scope?: ExceptionScopeCode;
-  team_id?: string | null;
+  squad_id?: string | null;
   employee_id?: string | null;
   comment?: string | null;
   created_by?: string | null;
@@ -291,7 +339,10 @@ export type Database = {
   public: {
     Tables: {
       profiles: Table<ProfileRow, ProfileInsert, Partial<ProfileRow>>;
-      teams: Table<TeamRow, TeamInsert, Partial<TeamRow>>;
+      organizational_units: Table<OrganizationalUnitRow, OrganizationalUnitInsert, Partial<OrganizationalUnitRow>>;
+      tribes: Table<TribeRow, TribeInsert, Partial<TribeRow>>;
+      squads: Table<SquadRow, SquadInsert, Partial<SquadRow>>;
+      membership_changes: Table<MembershipChangeRow, MembershipChangeInsert, Partial<MembershipChangeRow>>;
       rule_overrides: Table<RuleOverrideRow, RuleOverrideInsert, Partial<RuleOverrideRow>>;
       weekly_plans: Table<WeeklyPlanRow, WeeklyPlanInsert, Partial<WeeklyPlanRow>>;
       telework_days: Table<TeleworkDayRow, TeleworkDayInsert, Partial<TeleworkDayRow>>;

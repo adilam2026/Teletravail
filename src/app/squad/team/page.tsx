@@ -1,20 +1,21 @@
 import { requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getManagerTeam } from "@/lib/data/team";
-import { CreateEmployeeForm } from "@/components/manager/CreateEmployeeForm";
+import { getSquadLedBy, getSquadMembers } from "@/lib/data/hierarchy";
+import { CreateEmployeeForm } from "@/components/squad/CreateEmployeeForm";
 import { UserRowActions } from "@/components/UserRowActions";
 
-export default async function ManagerTeamPage() {
-  const { profile } = await requireRole("manager");
+export default async function SquadTeamPage() {
+  const { profile } = await requireRole("squad_lead");
   const supabase = await createClient();
-  const { team, members } = await getManagerTeam(supabase, profile.id);
+  const squad = await getSquadLedBy(supabase, profile.id);
+  const members = squad ? await getSquadMembers(supabase, squad.id) : [];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Mon équipe</h1>
-          <p className="text-sm text-slate-500">{team ? team.name : "Aucune équipe rattachée"}</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Ma Squad</h1>
+          <p className="text-sm text-slate-500">{squad ? squad.name : "Aucune Squad rattachée"}</p>
         </div>
         <CreateEmployeeForm />
       </div>

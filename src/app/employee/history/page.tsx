@@ -1,4 +1,4 @@
-import { requireRole } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 
 const ACTION_LABELS: Record<string, string> = {
@@ -12,7 +12,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 export default async function EmployeeHistoryPage() {
-  await requireRole("employee");
+  await requireUser();
   const supabase = await createClient();
 
   const { data: logs } = await supabase

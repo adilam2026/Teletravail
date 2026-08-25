@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
 import { createClient, type AppSupabaseClient } from "@/lib/supabase/server";
-import { loadTeamWeek } from "@/lib/data/team";
+import { loadGroupWeek } from "@/lib/data/hierarchy";
 import { addWeeks, currentWeekStart, mondayOf } from "@/lib/date/casablanca";
 import { WEEKDAY_LABELS } from "@/lib/rules-engine/calendar";
 import { StatusBadge } from "@/components/StatusBadge";
-import type { PlanStatus, ProfileRow, TeamRow } from "@/lib/supabase/database.types";
+import type { PlanStatus, ProfileRow, SquadRow } from "@/lib/supabase/database.types";
 
 export default async function AdminPlanningPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
   await requireRole("admin");
@@ -13,15 +13,15 @@ export default async function AdminPlanningPage({ searchParams }: { searchParams
   const weekStart = params.week ? mondayOf(params.week) : currentWeekStart();
   const supabase = await createClient();
 
-  const { data: teams } = await supabase.from("teams").select("*").order("name");
+  const { data: squads } = await supabase.from("squads").select("*").order("name");
   const { data: allMembers } = await supabase.from("profiles").select("*").eq("role", "employee").eq("status", "active");
 
-  const membersByTeam = new Map<string, typeof allMembers>();
+  const membersBySquad = new Map<string, ProfileRow[]>();
   for (const m of allMembers ?? []) {
-    if (!m.team_id) continue;
-    const list = membersByTeam.get(m.team_id) ?? [];
+    if (!m.squad_id) continue;
+    const list = membersBySquad.get(m.squad_id) ?? [];
     list.push(m);
-    membersByTeam.set(m.team_id, list);
+    membersBySquad.set(m.squad_id, list);
   }
 
   return (
@@ -41,32 +41,32 @@ export default async function AdminPlanningPage({ searchParams }: { searchParams
         </div>
       </div>
 
-      {(teams ?? [])
-        .filter((team) => (membersByTeam.get(team.id) ?? []).length > 0)
-        .map((team) => (
-          <TeamPlanningCard key={team.id} supabase={supabase} team={team} members={membersByTeam.get(team.id) ?? []} weekStart={weekStart} />
+      {(squads ?? [])
+        .filter((squad) => (membersBySquad.get(squad.id) ?? []).length > 0)
+        .map((squad) => (
+          <SquadPlanningCard key={squad.id} supabase={supabase} squad={squad} members={membersBySquad.get(squad.id) ?? []} weekStart={weekStart} />
         ))}
-      {(teams ?? []).length === 0 && <p className="text-sm text-slate-400">Aucune équipe.</p>}
+      {(squads ?? []).length === 0 && <p className="text-sm text-slate-400">Aucune Squad.</p>}
     </div>
   );
 }
 
-async function TeamPlanningCard({
+async function SquadPlanningCard({
   supabase,
-  team,
+  squad,
   members,
   weekStart,
 }: {
   supabase: AppSupabaseClient;
-  team: TeamRow;
+  squad: SquadRow;
   members: ProfileRow[];
   weekStart: string;
 }) {
-  const overview = await loadTeamWeek(supabase, team, members, weekStart);
+  const overview = await loadGroupWeek(supabase, members, weekStart);
 
   return (
     <div className="card overflow-x-auto p-0">
-      <p className="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-800">{team.name}</p>
+      <p className="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-800">{squad.name}</p>
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="text-left text-xs font-semibold uppercase text-slate-400">

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getAbsencesForEmployee, getExceptionsFor, getHolidaysInRange, buildDayBadge } from "@/lib/data/planning";
 import { currentMonth, shiftMonth, monthWeeks } from "@/lib/date/casablanca";
@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import type { PlanStatus } from "@/lib/supabase/database.types";
 
 export default async function AgendaMonthPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
-  const { profile } = await requireRole("employee");
+  const { profile } = await requireUser();
   const params = await searchParams;
   const month = params.month ?? currentMonth();
   const supabase = await createClient();
@@ -20,7 +20,7 @@ export default async function AgendaMonthPage({ searchParams }: { searchParams: 
   const [holidays, absences, exceptions, { data: plans }] = await Promise.all([
     getHolidaysInRange(supabase, rangeStart, rangeEnd),
     getAbsencesForEmployee(supabase, profile.id, rangeStart, rangeEnd),
-    getExceptionsFor(supabase, profile.id, profile.team_id, rangeStart, rangeEnd),
+    getExceptionsFor(supabase, [profile.id], profile.squad_id ? [profile.squad_id] : [], rangeStart, rangeEnd),
     supabase.from("weekly_plans").select("id, week_start, status").eq("employee_id", profile.id).in("week_start", weeks),
   ]);
 

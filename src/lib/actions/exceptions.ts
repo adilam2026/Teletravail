@@ -13,7 +13,7 @@ export interface ExceptionInput {
   startDate: string;
   endDate: string;
   scope: ExceptionScopeCode;
-  teamId?: string | null;
+  squadId?: string | null;
   employeeId?: string | null;
   comment?: string;
 }
@@ -29,7 +29,7 @@ export async function createException(input: ExceptionInput): Promise<ActionResu
       start_date: input.startDate,
       end_date: input.endDate,
       scope: input.scope,
-      team_id: input.scope === "team" ? input.teamId ?? null : null,
+      squad_id: input.scope === "squad" ? input.squadId ?? null : null,
       employee_id: input.scope === "employee" ? input.employeeId ?? null : null,
       comment: input.comment ?? null,
       created_by: profile.id,
@@ -57,5 +57,7 @@ export async function deleteException(id: string): Promise<ActionResult> {
 function revalidateExceptionViews() {
   revalidatePath("/admin/exceptions");
   revalidatePath("/employee/agenda");
-  revalidatePath("/manager/planning");
+  revalidatePath("/squad/team");
+  revalidatePath("/tribe/overview");
+  revalidatePath("/du/overview");
 }

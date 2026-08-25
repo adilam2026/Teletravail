@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { requireRole } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { addWeeks, currentWeekStart } from "@/lib/date/casablanca";
 import { StatusBadge } from "@/components/StatusBadge";
 
 export default async function WeeksPage() {
-  const { profile } = await requireRole("employee");
+  const { profile } = await requireUser();
   const supabase = await createClient();
 
   const current = currentWeekStart();

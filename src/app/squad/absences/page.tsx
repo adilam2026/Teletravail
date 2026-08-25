@@ -1,12 +1,13 @@
 import { requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getManagerTeam } from "@/lib/data/team";
-import { CreateAbsenceForm } from "@/components/manager/CreateAbsenceForm";
+import { getSquadLedBy, getSquadMembers } from "@/lib/data/hierarchy";
+import { CreateAbsenceForm } from "@/components/squad/CreateAbsenceForm";
 
-export default async function ManagerAbsencesPage() {
-  const { profile } = await requireRole("manager");
+export default async function SquadAbsencesPage() {
+  const { profile } = await requireRole("squad_lead");
   const supabase = await createClient();
-  const { members } = await getManagerTeam(supabase, profile.id);
+  const squad = await getSquadLedBy(supabase, profile.id);
+  const members = squad ? await getSquadMembers(supabase, squad.id) : [];
   const memberIds = members.map((m) => m.id);
 
   const [{ data: types }, { data: absences }] = await Promise.all([
@@ -26,7 +27,7 @@ export default async function ManagerAbsencesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Absences de l&apos;équipe</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Absences de la Squad</h1>
           <p className="text-sm text-slate-500">Congés, arrêts et autres absences déclarés</p>
         </div>
         <CreateAbsenceForm

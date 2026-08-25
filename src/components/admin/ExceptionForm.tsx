@@ -16,7 +16,7 @@ const TYPE_OPTIONS: { value: ExceptionTypeCode; label: string }[] = [
   { value: "custom_period", label: "Période particulière" },
 ];
 
-export function CreateExceptionForm({ teams, employees }: { teams: Option[]; employees: Option[] }) {
+export function CreateExceptionForm({ squads, employees }: { squads: Option[]; employees: Option[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -27,7 +27,7 @@ export function CreateExceptionForm({ teams, employees }: { teams: Option[]; emp
   const [scope, setScope] = useState<ExceptionScopeCode>("company");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [teamId, setTeamId] = useState("");
+  const [squadId, setSquadId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [comment, setComment] = useState("");
 
@@ -35,7 +35,7 @@ export function CreateExceptionForm({ teams, employees }: { teams: Option[]; emp
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await createException({ name, type, scope, startDate, endDate, teamId: teamId || null, employeeId: employeeId || null, comment: comment || undefined });
+      const result = await createException({ name, type, scope, startDate, endDate, squadId: squadId || null, employeeId: employeeId || null, comment: comment || undefined });
       if (!result.ok) {
         setError(result.error ?? "Erreur");
         return;
@@ -86,18 +86,18 @@ export function CreateExceptionForm({ teams, employees }: { teams: Option[]; emp
           <label className="label">Périmètre</label>
           <select className="input" value={scope} onChange={(e) => setScope(e.target.value as ExceptionScopeCode)}>
             <option value="company">Toute l&apos;entreprise</option>
-            <option value="team">Une équipe</option>
+            <option value="squad">Une Squad</option>
             <option value="employee">Un collaborateur</option>
           </select>
         </div>
-        {scope === "team" && (
+        {scope === "squad" && (
           <div>
-            <label className="label">Équipe</label>
-            <select className="input" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+            <label className="label">Squad</label>
+            <select className="input" value={squadId} onChange={(e) => setSquadId(e.target.value)}>
               <option value="">—</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
+              {squads.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
                 </option>
               ))}
             </select>

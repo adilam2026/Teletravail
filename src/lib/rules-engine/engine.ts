@@ -66,22 +66,20 @@ interface BaselineBlock {
  * sélectionnés dans la semaine (férié, absence, exception, reprise...).
  * Une exception "telework_allowed" lève ces blocages (hors quota / consécutifs).
  */
+/**
+ * Ordre de priorité des états d'une journée, du plus fort au plus faible :
+ * 1. Jour férié / fermeture — 2. Absence — 3. Présence obligatoire —
+ * 4. Télétravail — 5. Bureau. Une "autorisation exceptionnelle" reste
+ * volontairement au-dessus de tout : c'est une dérogation administrative
+ * explicite, elle doit primer même sur un jour férié ou une reprise.
+ * Un jour n'est ainsi jamais affiché à la fois en congé et en télétravail.
+ */
 function baselineForDay(
   date: string,
   input: Pick<WeekEvaluationInput, "holidays" | "absences" | "exceptions" | "settings">
 ): BaselineBlock | null {
   const { holidays, absences, exceptions, settings } = input;
   const dayExceptions = exceptionAt(date, exceptions);
-
-  const forbidding = dayExceptions.find(
-    (e) => e.type === "mandatory_office" || e.type === "telework_forbidden" ||
-      e.type === "site_closure" || e.type === "company_event" || e.type === "seminar" ||
-      e.type === "custom_period"
-  );
-  if (forbidding) {
-    const label = forbidding.type === "mandatory_office" ? "Présence obligatoire" : forbidding.name;
-    return { ruleCode: "MANDATORY_OFFICE_DAY", reason: label, severity: "blocking" };
-  }
 
   const allowedException = dayExceptions.find((e) => e.type === "telework_allowed");
   if (allowedException) return null;
@@ -104,7 +102,75 @@ function baselineForDay(
     };
   }
 
+  const forbidding = dayExceptions.find(
+    (e) => e.type === "mandatory_office" || e.type === "telework_forbidden" ||
+      e.type === "site_closure" || e.type === "company_event" || e.type === "seminar" ||
+      e.type === "custom_period"
+  );
+  if (forbidding) {
+    const label = forbidding.type === "mandatory_office" ? "Présence obligatoire" : forbidding.name;
+    return { ruleCode: "MANDATORY_OFFICE_DAY", reason: label, severity: "blocking" };
+  }
+
   return null;
+}
+
+interface AdjacencyViolation {
+  ruleCode: DayEvaluation["ruleCode"];
+  reason: string;
+}
+
+/** Le jour `dates[idx]` entrerait-il en conflit (consécutif / lundi+vendredi) avec `candidateSelected` ? */
+function adjacencyViolation(
+  idx: number,
+  dates: string[],
+  candidateSelected: Set<string>,
+  settings: RuleSettings
+): AdjacencyViolation | null {
+  const date = dates[idx]!;
+  const mondayDate = dates[0]!;
+  const fridayDate = dates[4]!;
+
+  if (settings.consecutiveDaysForbidden) {
+    const prev = idx > 0 ? dates[idx - 1] : null;
+    const next = idx < dates.length - 1 ? dates[idx + 1] : null;
+    if ((prev && candidateSelected.has(prev)) || (next && candidateSelected.has(next))) {
+      return { ruleCode: "CONSECUTIVE_REMOTE_DAYS", reason: "Deux jours de télétravail consécutifs sont interdits" };
+    }
+  }
+
+  if (settings.mondayFridayForbidden) {
+    if (
+      (date === mondayDate && candidateSelected.has(fridayDate)) ||
+      (date === fridayDate && candidateSelected.has(mondayDate))
+    ) {
+      return { ruleCode: "MONDAY_FRIDAY_COMBINATION", reason: "Combinaison lundi + vendredi interdite sur la même semaine" };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Quand le quota est atteint, cherche quelles dates actuellement
+ * sélectionnées peuvent être libérées pour accueillir `idx` sans provoquer
+ * de nouvelle violation (consécutif / lundi+vendredi). Permet le
+ * remplacement intelligent d'un jour par un autre en un clic plutôt que
+ * d'afficher un blocage sec (section "logique de remplacement intelligent").
+ */
+function findSwapCandidates(
+  idx: number,
+  dates: string[],
+  selected: Set<string>,
+  settings: RuleSettings
+): string[] {
+  const candidates: string[] = [];
+  for (const s of selected) {
+    const trial = new Set(selected);
+    trial.delete(s);
+    if (!adjacencyViolation(idx, dates, trial, settings)) candidates.push(s);
+  }
+  return candidates;
 }
 
 /**
@@ -138,16 +204,36 @@ export function evaluateWeek(input: WeekEvaluationInput): WeekEvaluationResult {
         reason: baseline.reason,
         ruleCode: baseline.ruleCode,
         severity: baseline.severity,
+        swapCandidates: null,
       };
     }
 
     if (isSelected) {
-      return { date, weekday, selected: true, allowed: true, reason: null, ruleCode: null, severity: null };
+      return { date, weekday, selected: true, allowed: true, reason: null, ruleCode: null, severity: null, swapCandidates: null };
     }
 
     // Jour structurellement éligible mais pas encore sélectionné : simuler
     // ce qui se passerait si l'utilisateur cliquait dessus.
-    if (selected.size >= quota) {
+    if (selected.size < quota) {
+      const violation = adjacencyViolation(idx, dates, selected, settings);
+      if (violation) {
+        return {
+          date,
+          weekday,
+          selected: false,
+          allowed: false,
+          reason: violation.reason,
+          ruleCode: violation.ruleCode,
+          severity: "blocking",
+          swapCandidates: null,
+        };
+      }
+      return { date, weekday, selected: false, allowed: true, reason: null, ruleCode: null, severity: null, swapCandidates: null };
+    }
+
+    // Quota atteint : chercher un remplacement intelligent avant de bloquer sec.
+    const swapCandidates = findSwapCandidates(idx, dates, selected, settings);
+    if (swapCandidates.length === 0) {
       return {
         date,
         weekday,
@@ -156,40 +242,22 @@ export function evaluateWeek(input: WeekEvaluationInput): WeekEvaluationResult {
         reason: `Quota hebdomadaire atteint (${quota} j.)`,
         ruleCode: "MAX_WEEKLY_QUOTA",
         severity: "blocking",
+        swapCandidates: null,
       };
     }
-
-    if (settings.consecutiveDaysForbidden) {
-      const prev = idx > 0 ? dates[idx - 1] : null;
-      const next = idx < dates.length - 1 ? dates[idx + 1] : null;
-      if ((prev && selected.has(prev)) || (next && selected.has(next))) {
-        return {
-          date,
-          weekday,
-          selected: false,
-          allowed: false,
-          reason: "Deux jours de télétravail consécutifs sont interdits",
-          ruleCode: "CONSECUTIVE_REMOTE_DAYS",
-          severity: "blocking",
-        };
-      }
-    }
-
-    if (settings.mondayFridayForbidden) {
-      if ((date === mondayDate && fridaySelected) || (date === fridayDate && mondaySelected)) {
-        return {
-          date,
-          weekday,
-          selected: false,
-          allowed: false,
-          reason: "Combinaison lundi + vendredi interdite sur la même semaine",
-          ruleCode: "MONDAY_FRIDAY_COMBINATION",
-          severity: "blocking",
-        };
-      }
-    }
-
-    return { date, weekday, selected: false, allowed: true, reason: null, ruleCode: null, severity: null };
+    return {
+      date,
+      weekday,
+      selected: false,
+      allowed: false,
+      reason:
+        swapCandidates.length === 1
+          ? "Remplacera automatiquement votre jour de télétravail déjà sélectionné"
+          : "Quota atteint — choisissez le jour à remplacer",
+      ruleCode: "MAX_WEEKLY_QUOTA",
+      severity: "blocking",
+      swapCandidates,
+    };
   });
 
   const alerts: WeekAlert[] = [];

@@ -16,13 +16,13 @@ export default async function AdminExceptionsPage() {
   await requireRole("admin");
   const supabase = await createClient();
 
-  const [{ data: exceptions }, { data: teams }, { data: employees }] = await Promise.all([
+  const [{ data: exceptions }, { data: squads }, { data: employees }] = await Promise.all([
     supabase.from("company_exceptions").select("*").order("start_date", { ascending: false }),
-    supabase.from("teams").select("id, name").order("name"),
+    supabase.from("squads").select("id, name").order("name"),
     supabase.from("profiles").select("id, first_name, last_name").eq("status", "active").order("first_name"),
   ]);
 
-  const teamById = new Map((teams ?? []).map((t) => [t.id, t.name]));
+  const squadById = new Map((squads ?? []).map((s) => [s.id, s.name]));
   const employeeById = new Map((employees ?? []).map((e) => [e.id, `${e.first_name} ${e.last_name}`]));
 
   return (
@@ -33,7 +33,7 @@ export default async function AdminExceptionsPage() {
           <p className="text-sm text-slate-500">Journées de présence obligatoire, fermetures, événements...</p>
         </div>
         <CreateExceptionForm
-          teams={(teams ?? []).map((t) => ({ id: t.id, label: t.name }))}
+          squads={(squads ?? []).map((s) => ({ id: s.id, label: s.name }))}
           employees={(employees ?? []).map((e) => ({ id: e.id, label: `${e.first_name} ${e.last_name}` }))}
         />
       </div>
@@ -47,7 +47,7 @@ export default async function AdminExceptionsPage() {
               </p>
               <p className="text-xs text-slate-400">
                 Du {e.start_date} au {e.end_date} ·{" "}
-                {e.scope === "company" ? "Toute l'entreprise" : e.scope === "team" ? teamById.get(e.team_id ?? "") ?? "Équipe" : employeeById.get(e.employee_id ?? "") ?? "Collaborateur"}
+                {e.scope === "company" ? "Toute l'entreprise" : e.scope === "squad" ? squadById.get(e.squad_id ?? "") ?? "Squad" : employeeById.get(e.employee_id ?? "") ?? "Collaborateur"}
               </p>
             </div>
             <DeleteExceptionButton id={e.id} />

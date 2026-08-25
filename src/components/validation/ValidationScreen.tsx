@@ -1,15 +1,24 @@
-import { requireRole } from "@/lib/auth/session";
-import { createClient, type AppSupabaseClient } from "@/lib/supabase/server";
-import { getManagerTeam } from "@/lib/data/team";
+import type { AppSupabaseClient } from "@/lib/supabase/server";
 import { loadEmployeeWeek } from "@/lib/data/planning";
-import type { PlanStatus } from "@/lib/supabase/database.types";
-import { ValidationBoard, type ValidationRowData } from "@/components/manager/ValidationBoard";
+import type { PlanStatus, ProfileRow } from "@/lib/supabase/database.types";
+import { ValidationBoard, type ValidationRowData } from "@/components/squad/ValidationBoard";
 
-export default async function ValidationPage() {
-  const { profile } = await requireRole("manager");
-  const supabase = await createClient();
-  const { members } = await getManagerTeam(supabase, profile.id);
-
+/**
+ * Écran "À valider" générique : réutilisé tel quel par Squad Lead, Tribe Lead
+ * et Responsable DU (section 19) — seule la liste des rattachés directs
+ * change selon le niveau appelant.
+ */
+export async function ValidationScreen({
+  supabase,
+  members,
+  title,
+  subtitle,
+}: {
+  supabase: AppSupabaseClient;
+  members: ProfileRow[];
+  title: string;
+  subtitle: string;
+}) {
   const { data: submittedPlans } = members.length
     ? await supabase
         .from("weekly_plans")
@@ -40,18 +49,22 @@ export default async function ValidationPage() {
     });
   }
 
-  const validatedCount = await countByStatus(supabase, members.map((m) => m.id), "validated");
+  const validatedCount = await countByStatus(
+    supabase,
+    members.map((m) => m.id),
+    "validated"
+  );
   const notSubmittedCount = members.length - rows.length - validatedCount;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">À valider</h1>
-        <p className="text-sm text-slate-500">Semaines soumises par votre équipe</p>
+        <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
+        <p className="text-sm text-slate-500">{subtitle}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <IndicatorCard label="Équipe" value={members.length} />
+        <IndicatorCard label="Rattachés" value={members.length} />
         <IndicatorCard label="À valider" value={rows.length} />
         <IndicatorCard label="Validées" value={validatedCount} />
         <IndicatorCard label="Non soumises" value={Math.max(notSubmittedCount, 0)} />

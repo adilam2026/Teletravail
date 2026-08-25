@@ -256,6 +256,51 @@ describe("Rotation des jours", () => {
   });
 });
 
+describe("Remplacement intelligent (quota atteint)", () => {
+  it("externe : un jour déjà sélectionné se remplace automatiquement (candidat unique)", () => {
+    const result = evaluateWeek(baseInput({ employee: externalEmployee, selectedDates: [MON] }));
+    const wed = result.days.find((d) => d.date === WED)!;
+    expect(wed.allowed).toBe(false);
+    expect(wed.ruleCode).toBe("MAX_WEEKLY_QUOTA");
+    expect(wed.swapCandidates).toEqual([MON]);
+  });
+
+  it("interne 2 jours : un seul des deux jours est un remplacement valide (l'autre créerait un jour consécutif)", () => {
+    // Mardi + Jeudi sélectionnés, clic sur Vendredi : retirer Mardi laisserait
+    // Jeudi + Vendredi (consécutifs, interdit) ; seul Jeudi est un candidat valide.
+    const result = evaluateWeek(baseInput({ selectedDates: [TUE, THU] }));
+    const fri = result.days.find((d) => d.date === FRI)!;
+    expect(fri.allowed).toBe(false);
+    expect(fri.swapCandidates).toEqual([THU]);
+  });
+
+  it("aucun remplacement valide -> blocage classique sans swapCandidates", () => {
+    // Mardi + Jeudi sélectionnés, clic sur Mercredi : Mercredi est consécutif
+    // avec Mardi ET avec Jeudi, donc aucun retrait ne le débloque.
+    const result = evaluateWeek(baseInput({ selectedDates: [TUE, THU] }));
+    const wed = result.days.find((d) => d.date === WED)!;
+    expect(wed.allowed).toBe(false);
+    expect(wed.swapCandidates).toBeNull();
+    expect(wed.ruleCode).toBe("MAX_WEEKLY_QUOTA");
+  });
+
+  it("avec les règles de combinaison désactivées, plusieurs remplacements valides sont proposés au choix", () => {
+    const settings: RuleSettings = { ...DEFAULT_RULE_SETTINGS, consecutiveDaysForbidden: false, mondayFridayForbidden: false };
+    const result = evaluateWeek(baseInput({ settings, selectedDates: [TUE, THU] }));
+    const fri = result.days.find((d) => d.date === FRI)!;
+    expect(fri.swapCandidates).toEqual(expect.arrayContaining([TUE, THU]));
+    expect(fri.swapCandidates).toHaveLength(2);
+  });
+
+  it("le quota a encore de la place : pas de logique de remplacement, simple blocage d'adjacence", () => {
+    const employee: EmployeeContext = { ...internalEmployee, weeklyQuota: 3 };
+    const result = evaluateWeek(baseInput({ employee, selectedDates: [TUE] }));
+    const wed = result.days.find((d) => d.date === WED)!;
+    expect(wed.swapCandidates).toBeNull();
+    expect(wed.ruleCode).toBe("CONSECUTIVE_REMOTE_DAYS");
+  });
+});
+
 describe("Présence d'équipe", () => {
   it("calcule le pourcentage de présence au bureau et signale le seuil bas", () => {
     const result = evaluateTeamPresence(

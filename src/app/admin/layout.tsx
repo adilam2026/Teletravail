@@ -4,7 +4,7 @@ import { AppShell } from "@/components/nav/AppShell";
 const NAV_ITEMS = [
   { href: "/admin/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/admin/users", label: "Utilisateurs", icon: "👥" },
-  { href: "/admin/teams", label: "Équipes", icon: "🏷️" },
+  { href: "/admin/organisation", label: "Organisation", icon: "🏷️" },
   { href: "/admin/planning", label: "Planning global", icon: "📅" },
   { href: "/admin/holidays", label: "Jours fériés", icon: "🇲🇦" },
   { href: "/admin/absences", label: "Absences", icon: "🌴" },
@@ -17,7 +17,7 @@ const NAV_ITEMS = [
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { profile } = await requireRole("admin");
   return (
-    <AppShell role="admin" userName={`${profile.first_name} ${profile.last_name}`} items={NAV_ITEMS}>
+    <AppShell roleLabel="Administrateur" userName={`${profile.first_name} ${profile.last_name}`} items={NAV_ITEMS}>
       {children}
     </AppShell>
   );

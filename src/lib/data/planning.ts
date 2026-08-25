@@ -8,7 +8,7 @@ import type {
   RuleSettings,
 } from "@/lib/rules-engine";
 import { evaluateWeek, resolveWeeklyQuota } from "@/lib/rules-engine/engine";
-import type { WeekEvaluationResult } from "@/lib/rules-engine/types";
+import type { WeekEvaluationInput, WeekEvaluationResult } from "@/lib/rules-engine/types";
 import type { ProfileRow, WeeklyPlanRow } from "@/lib/supabase/database.types";
 import type { AppSupabaseClient as DB } from "@/lib/supabase/server";
 import { nowIso } from "@/lib/date/casablanca";
@@ -68,32 +68,29 @@ export async function getAbsencesForEmployee(
   }));
 }
 
+/**
+ * Exceptions applicables à un ou plusieurs collaborateurs / squads — le même
+ * appel sert l'agenda d'un seul collaborateur (tableaux à un élément) et les
+ * vues d'équipe agrégées (Squad/Tribe/DU) qui couvrent plusieurs squads.
+ */
 export async function getExceptionsFor(
   supabase: DB,
-  employeeId: string,
-  teamId: string | null,
+  employeeIds: string[],
+  squadIds: string[],
   start: string,
   end: string
 ): Promise<ExceptionPeriod[]> {
   const { data } = await supabase
     .from("company_exceptions")
-    .select("start_date, end_date, type, name, scope, team_id, employee_id")
+    .select("start_date, end_date, type, name, scope, squad_id, employee_id")
     .lte("start_date", end)
     .gte("end_date", start);
-  return ((data ?? []) as {
-    start_date: string;
-    end_date: string;
-    type: ExceptionPeriod["type"];
-    name: string;
-    scope: string;
-    team_id: string | null;
-    employee_id: string | null;
-  }[])
+  return (data ?? [])
     .filter(
       (row) =>
         row.scope === "company" ||
-        (row.scope === "team" && row.team_id === teamId) ||
-        (row.scope === "employee" && row.employee_id === employeeId)
+        (row.scope === "squad" && !!row.squad_id && squadIds.includes(row.squad_id)) ||
+        (row.scope === "employee" && !!row.employee_id && employeeIds.includes(row.employee_id))
     )
     .map((row) => ({ startDate: row.start_date, endDate: row.end_date, type: row.type, name: row.name }));
 }
@@ -200,6 +197,14 @@ export interface EmployeeWeekContext {
   settings: RuleSettings;
   result: WeekEvaluationResult;
   badges: Record<string, DayBadge | null>;
+  /**
+   * Entrée complète du moteur de règles, réutilisable telle quelle côté
+   * client pour recalculer `evaluateWeek` de façon synchrone à chaque clic
+   * (UI optimiste, section "instantanéité" du cahier des charges) sans
+   * dupliquer la logique métier ni round-tripper le serveur avant d'afficher
+   * le résultat.
+   */
+  evaluationInput: WeekEvaluationInput;
 }
 
 /**
@@ -222,7 +227,7 @@ export async function loadEmployeeWeek(
     getOrCreateWeeklyPlan(supabase, profile.id, weekStart),
     getHolidaysInRange(supabase, rangeStart, rangeEnd),
     getAbsencesForEmployee(supabase, profile.id, rangeStart, rangeEnd),
-    getExceptionsFor(supabase, profile.id, profile.team_id, weekStart, addDaysStr(weekStart, 4)),
+    getExceptionsFor(supabase, [profile.id], profile.squad_id ? [profile.squad_id] : [], weekStart, addDaysStr(weekStart, 4)),
   ]);
 
   const quota = await getResolvedQuota(supabase, profile, settings);
@@ -234,7 +239,7 @@ export async function loadEmployeeWeek(
     ? await getPriorWeeksSelections(supabase, profile.id, weekStart, settings.rotationWeeks)
     : [];
 
-  const result = evaluateWeek({
+  const evaluationInput: WeekEvaluationInput = {
     weekStart,
     selectedDates,
     employee: { employeeId: profile.id, employeeType: profile.employee_type ?? "internal", weeklyQuota: quota },
@@ -244,11 +249,12 @@ export async function loadEmployeeWeek(
     exceptions,
     priorWeeksSelections,
     now: nowIso(),
-  });
+  };
+  const result = evaluateWeek(evaluationInput);
 
   const badges = Object.fromEntries(
     weekDates(weekStart).map((date) => [date, buildDayBadge(date, holidays, absences, exceptions)])
   );
 
-  return { plan, selectedDates, settings, result, badges };
+  return { plan, selectedDates, settings, result, badges, evaluationInput };
 }

@@ -90,6 +90,14 @@ export interface DayEvaluation {
   reason: string | null;
   ruleCode: RuleCode | null;
   severity: Severity | null;
+  /**
+   * Rempli uniquement quand ce jour est bloqué par le seul quota et qu'un
+   * remplacement intelligent existe : les dates actuellement sélectionnées
+   * qui peuvent être libérées pour accueillir celle-ci sans créer de
+   * nouvelle violation. Un seul candidat -> permutation automatique côté
+   * appelant ; plusieurs -> l'utilisateur choisit lequel remplacer.
+   */
+  swapCandidates: string[] | null;
 }
 
 export interface WeekAlert {

@@ -28,8 +28,8 @@ insert into telework_rules (key, value, description) values
 -- ----------------------------------------------------------------------------
 insert into app_settings (key, value) values
   ('allow_admin_create_admin', 'false'),
-  ('allow_manager_create_manager', 'false'),
-  ('allow_employee_self_absence', 'false');
+  ('allow_employee_self_absence', 'false'),
+  ('du_head_auto_validate', 'false');
 
 -- ----------------------------------------------------------------------------
 -- Types d'absence

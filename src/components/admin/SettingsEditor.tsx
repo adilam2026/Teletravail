@@ -6,8 +6,8 @@ import { updateAppSetting } from "@/lib/actions/rules";
 
 export interface SettingsEditorProps {
   allowAdminCreateAdmin: boolean;
-  allowManagerCreateManager: boolean;
   allowEmployeeSelfAbsence: boolean;
+  duHeadAutoValidate: boolean;
 }
 
 export function SettingsEditor(initial: SettingsEditorProps) {
@@ -33,16 +33,16 @@ export function SettingsEditor(initial: SettingsEditorProps) {
         onChange={() => toggle("allowAdminCreateAdmin", "allow_admin_create_admin")}
       />
       <Toggle
-        label="Autoriser un manager à créer d'autres managers"
-        checked={values.allowManagerCreateManager}
-        disabled={pending}
-        onChange={() => toggle("allowManagerCreateManager", "allow_manager_create_manager")}
-      />
-      <Toggle
         label="Autoriser un collaborateur à déclarer lui-même une absence"
         checked={values.allowEmployeeSelfAbsence}
         disabled={pending}
         onChange={() => toggle("allowEmployeeSelfAbsence", "allow_employee_self_absence")}
+      />
+      <Toggle
+        label="Valider automatiquement la semaine d'un Responsable DU (sinon transmise aux administrateurs)"
+        checked={values.duHeadAutoValidate}
+        disabled={pending}
+        onChange={() => toggle("duHeadAutoValidate", "du_head_auto_validate")}
       />
     </div>
   );

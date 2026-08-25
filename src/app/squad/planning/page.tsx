@@ -1,20 +1,21 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getManagerTeam, loadTeamWeek } from "@/lib/data/team";
+import { getSquadLedBy, getSquadMembers, loadGroupWeek } from "@/lib/data/hierarchy";
 import { addWeeks, currentWeekStart, mondayOf } from "@/lib/date/casablanca";
 import { weekDates, WEEKDAY_LABELS } from "@/lib/rules-engine/calendar";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { PlanStatus } from "@/lib/supabase/database.types";
 
-export default async function ManagerPlanningPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
-  const { profile } = await requireRole("manager");
+export default async function SquadPlanningPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
+  const { profile } = await requireRole("squad_lead");
   const params = await searchParams;
   const weekStart = params.week ? mondayOf(params.week) : currentWeekStart();
   const supabase = await createClient();
 
-  const { team, members } = await getManagerTeam(supabase, profile.id);
-  const overview = team ? await loadTeamWeek(supabase, team, members, weekStart) : null;
+  const squad = await getSquadLedBy(supabase, profile.id);
+  const members = squad ? await getSquadMembers(supabase, squad.id) : [];
+  const overview = await loadGroupWeek(supabase, members, weekStart);
   const dates = weekDates(weekStart);
 
   return (
@@ -25,30 +26,28 @@ export default async function ManagerPlanningPage({ searchParams }: { searchPara
           <p className="text-sm text-slate-500">Semaine du {weekStart}</p>
         </div>
         <div className="flex gap-2">
-          <Link href={`/manager/planning?week=${addWeeks(weekStart, -1)}`} className="btn-secondary">
+          <Link href={`/squad/planning?week=${addWeeks(weekStart, -1)}`} className="btn-secondary">
             ← Semaine précédente
           </Link>
-          <Link href={`/manager/planning?week=${addWeeks(weekStart, 1)}`} className="btn-secondary">
+          <Link href={`/squad/planning?week=${addWeeks(weekStart, 1)}`} className="btn-secondary">
             Semaine suivante →
           </Link>
         </div>
       </div>
 
-      {overview && (
-        <div className="card">
-          <p className="mb-3 text-sm font-semibold text-slate-800">Présence prévisionnelle au bureau</p>
-          <div className="grid grid-cols-5 gap-3 text-center">
-            {overview.presence.map((p, idx) => (
-              <div key={p.date}>
-                <p className="text-xs font-medium text-slate-400">{WEEKDAY_LABELS[idx]}</p>
-                <p className={`text-lg font-semibold ${p.belowThreshold ? "text-amber-600" : "text-slate-800"}`}>
-                  {p.officePercent}% {p.belowThreshold && "⚠️"}
-                </p>
-              </div>
-            ))}
-          </div>
+      <div className="card">
+        <p className="mb-3 text-sm font-semibold text-slate-800">Présence prévisionnelle au bureau</p>
+        <div className="grid grid-cols-5 gap-3 text-center">
+          {overview.presence.map((p, idx) => (
+            <div key={p.date}>
+              <p className="text-xs font-medium text-slate-400">{WEEKDAY_LABELS[idx]}</p>
+              <p className={`text-lg font-semibold ${p.belowThreshold ? "text-amber-600" : "text-slate-800"}`}>
+                {p.officePercent}% {p.belowThreshold && "⚠️"}
+              </p>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
 
       <div className="card overflow-x-auto p-0">
         <table className="w-full min-w-[720px] text-sm">
@@ -64,7 +63,7 @@ export default async function ManagerPlanningPage({ searchParams }: { searchPara
             </tr>
           </thead>
           <tbody>
-            {(overview?.members ?? []).map((m) => (
+            {overview.members.map((m) => (
               <tr key={m.profile.id} className="border-b border-slate-50">
                 <td className="px-5 py-3 font-medium text-slate-800">
                   {m.profile.first_name} {m.profile.last_name}
@@ -85,7 +84,7 @@ export default async function ManagerPlanningPage({ searchParams }: { searchPara
             ))}
           </tbody>
         </table>
-        {!overview?.members.length && <p className="px-5 py-8 text-center text-sm text-slate-400">Aucun collaborateur.</p>}
+        {!overview.members.length && <p className="px-5 py-8 text-center text-sm text-slate-400">Aucun collaborateur.</p>}
       </div>
       <p className="text-xs text-slate-400">{dates.length > 0 && `Semaine du ${dates[0]} au ${dates[4]}`}</p>
     </div>

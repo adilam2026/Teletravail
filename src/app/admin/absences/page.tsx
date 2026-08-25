@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { CreateAbsenceForm } from "@/components/manager/CreateAbsenceForm";
+import { CreateAbsenceForm } from "@/components/squad/CreateAbsenceForm";
 import { DeleteAbsenceButton } from "@/components/admin/DeleteAbsenceButton";
 
 export default async function AdminAbsencesPage() {

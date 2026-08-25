@@ -2,15 +2,13 @@ import type { ReactNode } from "react";
 import { NavSidebar, type NavItem } from "./NavSidebar";
 
 export interface AppShellProps {
-  role: "admin" | "manager" | "employee";
+  roleLabel: string;
   userName: string;
   items: NavItem[];
   children: ReactNode;
 }
 
-export function AppShell({ role, userName, items, children }: AppShellProps) {
-  const roleLabel = role === "admin" ? "Administrateur" : role === "manager" ? "Manager" : "Collaborateur";
-
+export function AppShell({ roleLabel, userName, items, children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-slate-50 lg:flex">
       <NavSidebar items={items} userName={userName} roleLabel={roleLabel} />

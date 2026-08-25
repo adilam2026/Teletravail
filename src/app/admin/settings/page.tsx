@@ -17,8 +17,8 @@ export default async function AdminSettingsPage() {
 
       <SettingsEditor
         allowAdminCreateAdmin={map.get("allow_admin_create_admin") === true}
-        allowManagerCreateManager={map.get("allow_manager_create_manager") === true}
         allowEmployeeSelfAbsence={map.get("allow_employee_self_absence") === true}
+        duHeadAutoValidate={map.get("du_head_auto_validate") === true}
       />
     </div>
   );

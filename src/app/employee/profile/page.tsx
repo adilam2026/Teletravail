@@ -1,30 +1,75 @@
 import Link from "next/link";
-import { requireRole } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getResolvedQuota, getRuleSettings } from "@/lib/data/planning";
+import { getDuLedBy, getSquadLedBy, getTribeLedBy } from "@/lib/data/hierarchy";
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrateur",
+  du_head: "Responsable DU",
+  tribe_lead: "Tribe Lead",
+  squad_lead: "Squad Lead",
+  employee: "Collaborateur",
+};
 
 export default async function EmployeeProfilePage() {
-  const { profile } = await requireRole("employee");
+  const { profile } = await requireUser();
   const supabase = await createClient();
 
-  const [settings, { data: team }, { data: manager }] = await Promise.all([
-    getRuleSettings(supabase),
-    profile.team_id ? supabase.from("teams").select("name").eq("id", profile.team_id).maybeSingle() : Promise.resolve({ data: null }),
-    profile.manager_id
-      ? supabase.from("profiles").select("first_name, last_name").eq("id", profile.manager_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-  ]);
+  const settings = await getRuleSettings(supabase);
   const quota = await getResolvedQuota(supabase, profile, settings);
+
+  const orgFields: [string, string][] = [];
+
+  if (profile.squad_id) {
+    const { data: squad } = await supabase.from("squads").select("name, manager_id").eq("id", profile.squad_id).maybeSingle();
+    orgFields.push(["Squad", squad?.name ?? "—"]);
+    if (squad?.manager_id) {
+      const { data: lead } = await supabase.from("profiles").select("first_name, last_name").eq("id", squad.manager_id).maybeSingle();
+      orgFields.push(["Squad Lead", lead ? `${lead.first_name} ${lead.last_name}` : "—"]);
+    }
+  }
+
+  if (profile.role === "squad_lead") {
+    const squad = await getSquadLedBy(supabase, profile.id);
+    orgFields.push(["Ma Squad", squad?.name ?? "—"]);
+    if (squad) {
+      const { data: t } = await supabase.from("tribes").select("name, manager_id").eq("id", squad.tribe_id).maybeSingle();
+      orgFields.push(["Tribe", t?.name ?? "—"]);
+      if (t?.manager_id) {
+        const { data: lead } = await supabase.from("profiles").select("first_name, last_name").eq("id", t.manager_id).maybeSingle();
+        orgFields.push(["Tribe Lead", lead ? `${lead.first_name} ${lead.last_name}` : "—"]);
+      }
+    }
+  }
+
+  if (profile.role === "tribe_lead") {
+    const tribe = await getTribeLedBy(supabase, profile.id);
+    orgFields.push(["Ma Tribe", tribe?.name ?? "—"]);
+    if (tribe) {
+      const { data: du } = await supabase.from("organizational_units").select("name, manager_id").eq("id", tribe.organizational_unit_id).maybeSingle();
+      orgFields.push(["DU", du?.name ?? "—"]);
+      if (du?.manager_id) {
+        const { data: head } = await supabase.from("profiles").select("first_name, last_name").eq("id", du.manager_id).maybeSingle();
+        orgFields.push(["Responsable DU", head ? `${head.first_name} ${head.last_name}` : "—"]);
+      }
+    }
+  }
+
+  if (profile.role === "du_head") {
+    const du = await getDuLedBy(supabase, profile.id);
+    orgFields.push(["Ma DU", du?.name ?? "—"]);
+  }
 
   const fields: [string, string][] = [
     ["Prénom", profile.first_name],
     ["Nom", profile.last_name],
     ["Identifiant", profile.login],
     ["Email", profile.email ?? "—"],
+    ["Niveau hiérarchique", ROLE_LABELS[profile.role] ?? profile.role],
     ["Type", profile.employee_type === "internal" ? "Interne" : profile.employee_type === "external" ? "Externe" : "—"],
     ["Quota télétravail", `${quota} jour${quota > 1 ? "s" : ""} / semaine`],
-    ["Équipe", team?.name ?? "—"],
-    ["Manager", manager ? `${manager.first_name} ${manager.last_name}` : "—"],
+    ...orgFields,
   ];
 
   return (

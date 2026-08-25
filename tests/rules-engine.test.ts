@@ -301,6 +301,31 @@ describe("Remplacement intelligent (quota atteint)", () => {
   });
 });
 
+describe("Sélection caduque écartée du calcul (jour bloqué a posteriori)", () => {
+  it("un lundi sélectionné mais bloqué (reprise après absence) ne compte pas pour le quota ni ne bloque le mardi comme consécutif", () => {
+    // Lundi était posé en télétravail avant qu'une absence ne force la
+    // reprise ce jour-là : Lundi doit s'afficher bloqué (Bureau obligatoire),
+    // et Mardi doit rester librement sélectionnable — sans quoi le mardi
+    // serait injustement refusé comme "jour consécutif" à un lundi qui, dans
+    // les faits, n'est plus du télétravail.
+    const result = evaluateWeek(
+      baseInput({
+        selectedDates: [MON],
+        absences: [{ startDate: "2026-09-04", endDate: "2026-09-04", triggersReturnRule: true }],
+      })
+    );
+    const mon = result.days.find((d) => d.date === MON)!;
+    expect(mon.selected).toBe(false);
+    expect(mon.ruleCode).toBe("RETURN_AFTER_ABSENCE");
+
+    const tue = result.days.find((d) => d.date === TUE)!;
+    expect(tue.allowed).toBe(true);
+    expect(tue.ruleCode).toBeNull();
+
+    expect(result.selectedCount).toBe(0);
+  });
+});
+
 describe("Pont vendredi / lundi (semaines consécutives)", () => {
   it("lundi est bloqué si le vendredi précédent est déjà en télétravail", () => {
     const result = evaluateWeek(baseInput({ adjacentSelections: { previousFriday: true, nextMonday: false } }));

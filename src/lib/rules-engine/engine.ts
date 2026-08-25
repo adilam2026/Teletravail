@@ -193,7 +193,17 @@ function findSwapCandidates(
 export function evaluateWeek(input: WeekEvaluationInput): WeekEvaluationResult {
   const { settings } = input;
   const dates = weekDates(input.weekStart);
-  const selected = new Set(input.selectedDates);
+  const rawSelected = new Set(input.selectedDates);
+
+  // Jours effectivement comptés comme télétravail pour le quota et
+  // l'adjacence (jours consécutifs, lundi+vendredi, pont) : un jour "posé"
+  // en base mais bloqué par une règle structurelle (férié, reprise après
+  // absence, présence obligatoire...) ne doit jamais compter comme du
+  // télétravail réel pour les AUTRES jours de la semaine — sinon une
+  // sélection devenue caduque (p.ex. une absence déclarée après coup sur un
+  // jour déjà télétravaillé) contaminerait injustement ses voisins.
+  const baselineByDate = new Map(dates.map((date) => [date, baselineForDay(date, input)]));
+  const selected = new Set(dates.filter((date) => rawSelected.has(date) && !baselineByDate.get(date)));
   const quota = input.employee.weeklyQuota;
 
   const mondayDate = dates[0]!;
@@ -204,7 +214,7 @@ export function evaluateWeek(input: WeekEvaluationInput): WeekEvaluationResult {
   const days: DayEvaluation[] = dates.map((date, idx) => {
     const weekday = idx + 1;
     const isSelected = selected.has(date);
-    const baseline = baselineForDay(date, input);
+    const baseline = baselineByDate.get(date)!;
 
     if (baseline) {
       return {

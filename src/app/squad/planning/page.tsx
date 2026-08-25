@@ -5,6 +5,7 @@ import { getSquadLedBy, getSquadMembers, loadGroupWeek } from "@/lib/data/hierar
 import { addWeeks, currentWeekStart, mondayOf } from "@/lib/date/casablanca";
 import { weekDates, WEEKDAY_LABELS } from "@/lib/rules-engine/calendar";
 import { StatusBadge } from "@/components/StatusBadge";
+import { QuickDecisionButton } from "@/components/validation/QuickDecisionButton";
 import type { PlanStatus } from "@/lib/supabase/database.types";
 
 export default async function SquadPlanningPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
@@ -74,11 +75,14 @@ export default async function SquadPlanningPage({ searchParams }: { searchParams
                   </td>
                 ))}
                 <td className="px-5 py-3">
-                  {m.status === "not_submitted" ? (
-                    <span className="badge bg-slate-100 text-slate-500">⚪ Non soumise</span>
-                  ) : (
-                    <StatusBadge status={m.status as PlanStatus} />
-                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {m.status === "not_submitted" ? (
+                      <span className="badge bg-slate-100 text-slate-500">⚪ Non soumise</span>
+                    ) : (
+                      <StatusBadge status={m.status as PlanStatus} />
+                    )}
+                    {m.status === "submitted" && m.planId && <QuickDecisionButton planId={m.planId} />}
+                  </div>
                 </td>
               </tr>
             ))}

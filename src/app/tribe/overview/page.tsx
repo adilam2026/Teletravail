@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getMembersForTribe, getTribeLedBy, loadGroupWeek } from "@/lib/data/hierarchy";
 import { addWeeks, currentWeekStart, mondayOf } from "@/lib/date/casablanca";
 import { StatusBadge } from "@/components/StatusBadge";
+import { QuickDecisionButton } from "@/components/validation/QuickDecisionButton";
 import type { PlanStatus } from "@/lib/supabase/database.types";
 
 export default async function TribeOverviewPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
@@ -65,14 +66,22 @@ export default async function TribeOverviewPage({ searchParams }: { searchParams
   );
 }
 
-function MemberRow({ name, sub, week }: { name: string; sub: string; week?: { status: PlanStatus | "not_submitted"; days: { date: string; icon: string; label: string }[] } }) {
+function MemberRow({
+  name,
+  sub,
+  week,
+}: {
+  name: string;
+  sub: string;
+  week?: { planId: string | null; status: PlanStatus | "not_submitted"; days: { date: string; icon: string; label: string }[] };
+}) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
       <div>
         <p className="text-sm font-medium text-slate-800">{name}</p>
         <p className="text-xs text-slate-400">{sub}</p>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <div className="flex gap-1 text-lg">
           {(week?.days ?? []).map((d) => (
             <span key={d.date} title={d.label}>
@@ -87,6 +96,7 @@ function MemberRow({ name, sub, week }: { name: string; sub: string; week?: { st
             <StatusBadge status={week.status as PlanStatus} />
           )
         ) : null}
+        {week?.status === "submitted" && week.planId && <QuickDecisionButton planId={week.planId} />}
       </div>
     </div>
   );

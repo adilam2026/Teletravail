@@ -192,9 +192,6 @@ async function decideWeek(
   const { data: plan } = await supabase.from("weekly_plans").select("*").eq("id", planId).single();
   if (!plan) return { ok: false, error: "Semaine introuvable." };
   if (plan.status !== "submitted") return { ok: false, error: "Cette semaine n'est pas en attente de validation." };
-  if ((newStatus === "rejected" || newStatus === "needs_changes") && !comment) {
-    return { ok: false, error: "Un commentaire est requis pour refuser ou demander une modification." };
-  }
 
   const { error } = await supabase
     .from("weekly_plans")
@@ -233,12 +230,12 @@ export async function validateWeek(planId: string, comment?: string): Promise<Ac
   return decideWeek(planId, "validated", comment ?? null);
 }
 
-export async function rejectWeek(planId: string, comment: string): Promise<ActionResult> {
-  return decideWeek(planId, "rejected", comment);
+export async function rejectWeek(planId: string, comment?: string): Promise<ActionResult> {
+  return decideWeek(planId, "rejected", comment ?? null);
 }
 
-export async function requestWeekChanges(planId: string, comment: string): Promise<ActionResult> {
-  return decideWeek(planId, "needs_changes", comment);
+export async function requestWeekChanges(planId: string, comment?: string): Promise<ActionResult> {
+  return decideWeek(planId, "needs_changes", comment ?? null);
 }
 
 export async function validateWeeksInBulk(planIds: string[]): Promise<ActionResult> {

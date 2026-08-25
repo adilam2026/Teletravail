@@ -294,12 +294,49 @@ export async function updateUser(input: UpdateUserInput): Promise<CreateUserResu
 }
 
 export async function setUserStatus(userId: string, status: "active" | "inactive"): Promise<CreateUserResult> {
-  await requireUser();
+  const { profile: actor } = await requireUser();
+  if (status === "inactive" && userId === actor.id) {
+    return { ok: false, error: "Vous ne pouvez pas désactiver votre propre compte." };
+  }
   const supabase = await createClient();
   const { error } = await supabase.from("profiles").update({ status }).eq("id", userId);
   if (error) return { ok: false, error: "Action impossible (droits insuffisants ?)." };
 
   await logAudit({ action: status === "active" ? "user_reactivated" : "user_deactivated", entityType: "profile", entityId: userId });
+  revalidateHierarchyViews();
+  return { ok: true };
+}
+
+/**
+ * Suppression définitive d'un compte (profil applicatif + compte Supabase
+ * Auth), distincte de la désactivation. Contrairement au statut, il n'existe
+ * aucune politique RLS "delete" sur profiles (suppression jamais autorisée
+ * en direct) : l'autorisation est donc entièrement portée par ce contrôle
+ * applicatif, puis exécutée avec le client admin (service role). Les données
+ * possédées par l'utilisateur (semaines, absences, notifications...) sont
+ * supprimées en cascade côté base ; les colonnes d'attribution (créé par,
+ * validé par...) passent à NULL pour préserver l'historique restant.
+ */
+export async function deleteUser(userId: string): Promise<CreateUserResult> {
+  const { profile: actor } = await requireUser();
+  if (userId === actor.id) {
+    return { ok: false, error: "Vous ne pouvez pas supprimer votre propre compte." };
+  }
+
+  const supabase = await createClient();
+  const { data: target } = await supabase.from("profiles").select("id, role, first_name, last_name, login").eq("id", userId).maybeSingle();
+  if (!target) return { ok: false, error: "Utilisateur introuvable." };
+  if (ROLE_RANK[target.role] >= ROLE_RANK[actor.role]) {
+    return { ok: false, error: "Vous ne pouvez pas supprimer un compte de niveau égal ou supérieur au vôtre." };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("profiles").delete().eq("id", userId);
+  if (error) return { ok: false, error: "Suppression impossible." };
+
+  await admin.auth.admin.deleteUser(userId);
+  await logAudit({ action: "user_deleted", entityType: "profile", entityId: userId, oldValue: target });
+
   revalidateHierarchyViews();
   return { ok: true };
 }

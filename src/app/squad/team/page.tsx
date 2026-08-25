@@ -32,7 +32,7 @@ export default async function SquadTeamPage() {
                 {m.status === "inactive" && " · Inactif"}
               </p>
             </div>
-            <UserRowActions userId={m.id} status={m.status} />
+            <UserRowActions userId={m.id} status={m.status} userLabel={`${m.first_name} ${m.last_name}`} />
           </div>
         ))}
         {members.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-400">Aucun collaborateur pour le moment.</p>}

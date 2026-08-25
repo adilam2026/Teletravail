@@ -39,9 +39,17 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && pathname === "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
+    // Ne redirige hors de /login que si le profil applicatif est bien actif :
+    // sinon (profil supprimé, ou désactivé pendant que la session Supabase
+    // reste valide), requireUser() sur "/" renverrait aussitôt vers /login,
+    // créant une boucle de redirection infinie (cf. incident self-lockout).
+    const { data: profile } = await supabase.from("profiles").select("status").eq("id", user.id).maybeSingle();
+    if (profile?.status === "active") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      return NextResponse.redirect(url);
+    }
+    return response;
   }
 
   return response;

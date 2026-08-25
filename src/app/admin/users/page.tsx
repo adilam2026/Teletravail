@@ -12,7 +12,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export default async function AdminUsersPage() {
-  await requireRole("admin");
+  const { profile: actor } = await requireRole("admin");
   const supabase = await createClient();
 
   const [{ data: users }, { data: orgUnits }, { data: tribes }, { data: squads }] = await Promise.all([
@@ -81,7 +81,7 @@ export default async function AdminUsersPage() {
                 {contextFor(u) && ` · ${contextFor(u)}`} · {u.login}
               </p>
             </div>
-            <UserRowActions userId={u.id} status={u.status} />
+            <UserRowActions userId={u.id} status={u.status} isSelf={u.id === actor.id} userLabel={`${u.first_name} ${u.last_name}`} />
           </div>
         ))}
       </div>

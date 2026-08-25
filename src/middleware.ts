@@ -1,7 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/_next", "/favicon.ico"];
+// /manifest.webmanifest et /sw.js doivent rester accessibles sans session :
+// un navigateur peut les demander avant toute connexion (ex. installation
+// de la PWA depuis l'écran de login) — les rediriger vers /login casserait
+// silencieusement l'enregistrement du service worker.
+const PUBLIC_PATHS = ["/login", "/auth", "/_next", "/favicon.ico", "/manifest.webmanifest", "/sw.js"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });

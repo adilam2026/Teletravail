@@ -49,14 +49,37 @@ export async function createHoliday(input: HolidayInput): Promise<ActionResult> 
   return { ok: true };
 }
 
+/**
+ * `durationDays`, ici, ajoute des jours chômés supplémentaires consécutifs
+ * après ce jour (ex. un jour férié saisi comme 1 jour puis annoncé sur 2 par
+ * la suite) — jamais destructeur : il ne touche ni ne supprime les lignes
+ * déjà existantes, il ne fait qu'en ajouter. Pour raccourcir un jour férié
+ * déjà étendu, supprimer la ligne du jour en trop directement.
+ */
 export async function updateHoliday(id: string, input: Partial<HolidayInput>): Promise<ActionResult> {
   const { profile } = await requireRole("admin");
   const supabase = await createClient();
   const { data: before } = await supabase.from("public_holidays").select("*").eq("id", id).single();
+  if (!before) return { ok: false, error: "Jour férié introuvable." };
 
-  const { durationDays: _durationDays, ...patch } = input;
+  const { durationDays, ...patch } = input;
   const { error } = await supabase.from("public_holidays").update({ ...patch, updated_by: profile.id }).eq("id", id);
   if (error) return { ok: false, error: "Modification impossible." };
+
+  const extraDays = Math.min(Math.max((durationDays ?? 1) - 1, 0), 9);
+  if (extraDays > 0) {
+    const baseDate = patch.date ?? before.date;
+    const rows = Array.from({ length: extraDays }, (_, i) => ({
+      name: patch.name ?? before.name,
+      date: addDaysStr(baseDate, i + 1),
+      type: patch.type ?? before.type,
+      status: patch.status ?? before.status,
+      created_by: profile.id,
+      updated_by: profile.id,
+    }));
+    const { error: insertError } = await supabase.from("public_holidays").insert(rows);
+    if (insertError) return { ok: false, error: "Jour modifié, mais l'ajout des jours supplémentaires a échoué." };
+  }
 
   await logAudit({ action: "holiday_updated", entityType: "public_holiday", entityId: id, oldValue: before, newValue: input });
   revalidateHolidayViews();

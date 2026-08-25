@@ -94,7 +94,9 @@ export function HolidayRowActions({ holiday }: { holiday: PublicHolidayRow }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [date, setDate] = useState(holiday.date);
+  const [extraDays, setExtraDays] = useState(1);
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function handleConfirm() {
     startTransition(async () => {
@@ -104,9 +106,15 @@ export function HolidayRowActions({ holiday }: { holiday: PublicHolidayRow }) {
   }
 
   function handleSaveDate() {
+    setError(null);
     startTransition(async () => {
-      await updateHoliday(holiday.id, { date });
+      const result = await updateHoliday(holiday.id, { date, durationDays: extraDays });
+      if (!result.ok) {
+        setError(result.error ?? "Erreur");
+        return;
+      }
       setEditing(false);
+      setExtraDays(1);
       router.refresh();
     });
   }
@@ -120,14 +128,36 @@ export function HolidayRowActions({ holiday }: { holiday: PublicHolidayRow }) {
 
   if (editing) {
     return (
-      <div className="flex items-center gap-2">
-        <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
-        <button type="button" className="btn-primary px-3 py-1.5 text-xs" disabled={pending} onClick={handleSaveDate}>
-          Enregistrer
-        </button>
-        <button type="button" className="btn-secondary px-3 py-1.5 text-xs" onClick={() => setEditing(false)}>
-          Annuler
-        </button>
+      <div className="flex flex-col items-start gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={1}
+              max={10}
+              className="input w-20"
+              value={extraDays}
+              onChange={(e) => setExtraDays(Math.max(1, Number(e.target.value)))}
+              title="Nombre total de jours chômés à partir de cette date (ajoute des jours supplémentaires sans toucher aux jours déjà enregistrés)"
+            />
+            <span className="text-xs text-slate-400">jour(s) total (ajout seulement)</span>
+          </div>
+          <button type="button" className="btn-primary px-3 py-1.5 text-xs" disabled={pending} onClick={handleSaveDate}>
+            Enregistrer
+          </button>
+          <button
+            type="button"
+            className="btn-secondary px-3 py-1.5 text-xs"
+            onClick={() => {
+              setEditing(false);
+              setError(null);
+            }}
+          >
+            Annuler
+          </button>
+        </div>
+        {error && <p className="text-xs text-rose-600">{error}</p>}
       </div>
     );
   }

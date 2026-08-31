@@ -39,7 +39,7 @@ export default async function WeeksPage() {
         {(plans ?? []).map((plan) => (
           <Link
             key={plan.id}
-            href={`/employee/agenda?week=${plan.week_start}`}
+            href={`/employee/agenda?month=${plan.week_start.slice(0, 7)}`}
             className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 transition hover:bg-slate-50"
           >
             <div>

@@ -35,7 +35,7 @@ function formatDateTime(iso: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long" }) + " · " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 
-export function WeekHistoryButton({ planId }: { planId: string }) {
+export function WeekHistoryButton({ planId, compact }: { planId: string; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [events, setEvents] = useState<WeekHistoryEvent[] | null>(null);
@@ -58,8 +58,12 @@ export function WeekHistoryButton({ planId }: { planId: string }) {
 
   return (
     <>
-      <button type="button" className="btn-secondary" onClick={handleOpen}>
-        🕘 Voir l&apos;historique
+      <button
+        type="button"
+        className={compact ? "text-xs font-medium text-slate-400 underline hover:text-slate-600" : "btn-secondary"}
+        onClick={handleOpen}
+      >
+        {compact ? "Historique" : "🕘 Voir l'historique"}
       </button>
       {open && (
         <div className="fixed inset-0 z-[105] flex justify-end bg-slate-900/40" onClick={() => setOpen(false)}>

@@ -1,76 +1,74 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { loadEmployeeWeek } from "@/lib/data/planning";
-import { addWeeks, currentWeekStart, mondayOf } from "@/lib/date/casablanca";
-import { WeekGrid } from "@/components/calendar/WeekGrid";
-import { WeekHistoryButton } from "@/components/calendar/WeekHistoryButton";
-import { ReopenWeekButton } from "@/components/employee/ReopenWeekButton";
+import { loadEmployeeMonth } from "@/lib/data/planning";
+import { currentMonth, shiftMonth } from "@/lib/date/casablanca";
+import { MonthWeekCard } from "@/components/calendar/MonthWeekCard";
 
-export default async function AgendaPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
+function weekRangeLabel(weekStart: string, dates: string[]): string {
+  const start = new Date(`${dates[0]}T00:00:00`);
+  const end = new Date(`${dates[4]}T00:00:00`);
+  const startDay = start.getDate();
+  const endDay = end.getDate();
+  const startMonth = start.toLocaleDateString("fr-FR", { month: "long" });
+  const endMonth = end.toLocaleDateString("fr-FR", { month: "long" });
+  return startMonth === endMonth ? `${startDay} – ${endDay} ${endMonth}` : `${startDay} ${startMonth} – ${endDay} ${endMonth}`;
+}
+
+export default async function AgendaPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const { profile } = await requireUser();
   const params = await searchParams;
-  const weekStart = params.week ? mondayOf(params.week) : currentWeekStart();
+  const month = params.month ?? currentMonth();
 
   const supabase = await createClient();
-  const week = await loadEmployeeWeek(supabase, profile, weekStart);
+  const { weeks } = await loadEmployeeMonth(supabase, profile, month);
 
-  const editable = week.plan.status === "draft" || week.plan.status === "needs_changes";
-  const rangeLabel = `${week.result.days[0]!.date.slice(8, 10)}/${week.result.days[0]!.date.slice(5, 7)} au ${week.result.days[4]!.date.slice(8, 10)}/${week.result.days[4]!.date.slice(5, 7)}`;
+  const monthLabel = new Date(`${month}-01T00:00:00`).toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+  const validatedCount = weeks.filter((w) => w.plan.status === "validated").length;
+  const pendingCount = weeks.filter((w) => w.plan.status === "submitted").length;
+  const draftCount = weeks.filter((w) => w.plan.status === "draft" || w.plan.status === "needs_changes").length;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Mon agenda</h1>
-          <p className="text-sm text-slate-500">Semaine du {rangeLabel}</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {validatedCount} semaine{validatedCount > 1 ? "s" : ""} validée{validatedCount > 1 ? "s" : ""} · {pendingCount} en attente ·{" "}
+            {draftCount} brouillon{draftCount > 1 ? "s" : ""}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/employee/agenda?week=${addWeeks(weekStart, -1)}`} className="btn-secondary">
-            ← Semaine précédente
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <Link href={`/employee/agenda?month=${shiftMonth(month, -1)}`} className="btn-secondary" aria-label="Mois précédent">
+              ‹
+            </Link>
+            <span className="min-w-[10rem] text-center text-base font-semibold capitalize text-slate-900">{monthLabel}</span>
+            <Link href={`/employee/agenda?month=${shiftMonth(month, 1)}`} className="btn-secondary" aria-label="Mois suivant">
+              ›
+            </Link>
+          </div>
+          <Link href="/employee/absences" className="btn-secondary whitespace-nowrap">
+            + Ajouter une absence
           </Link>
-          <Link href={`/employee/agenda?week=${addWeeks(weekStart, 1)}`} className="btn-secondary">
-            Semaine suivante →
-          </Link>
-          <Link href="/employee/agenda/month" className="btn-secondary">
-            Vue mois
-          </Link>
-          <WeekHistoryButton planId={week.plan.id} />
         </div>
       </div>
 
-      <WeekGrid
-        weekStart={weekStart}
-        planId={week.plan.id}
-        evaluationInput={week.evaluationInput}
-        badges={week.badges}
-        editable={editable}
-        planStatus={week.plan.status}
-      />
-
-      {week.plan.status === "needs_changes" && (
-        <div className="card border-amber-200 bg-amber-50">
-          <p className="text-sm font-semibold text-amber-800">Modification demandée</p>
-          <p className="mt-1 text-sm text-amber-700">
-            Votre manager a renvoyé cette semaine pour correction. Vous pouvez modifier vos jours puis la soumettre à nouveau.
-          </p>
-          {week.plan.manager_comment && (
-            <p className="mt-2 rounded-lg bg-white px-3 py-2 text-sm text-amber-900">« {week.plan.manager_comment} »</p>
-          )}
-        </div>
-      )}
-
-      {week.plan.status === "validated" && (
-        <div className="card border-emerald-200 bg-emerald-50">
-          <p className="text-sm font-semibold text-emerald-800">✓ Semaine validée</p>
-          <p className="mt-1 text-sm text-emerald-700">
-            Vous pouvez maintenant déclarer vos journées de télétravail sur la plateforme RH de votre entreprise.
-          </p>
-          <div className="mt-3">
-            <ReopenWeekButton planId={week.plan.id} />
-          </div>
-        </div>
-      )}
+      <div className="space-y-4">
+        {weeks.map((week) => (
+          <MonthWeekCard
+            key={week.weekStart}
+            weekStart={week.weekStart}
+            rangeLabel={weekRangeLabel(week.weekStart, week.result.days.map((d) => d.date))}
+            planId={week.plan.id}
+            initialStatus={week.plan.status}
+            managerComment={week.plan.manager_comment}
+            evaluationInput={week.evaluationInput}
+            badges={week.badges}
+          />
+        ))}
+        {weeks.length === 0 && <p className="card text-center text-sm text-slate-400">Aucune semaine pour ce mois.</p>}
+      </div>
     </div>
   );
 }

@@ -49,6 +49,44 @@ export function monthWeeks(month: string): string[] {
   return weeks;
 }
 
+/**
+ * Mois "propriétaire" d'une semaine (lundi `weekStart`) : celui qui compte la
+ * majorité des 5 jours ouvrés de cette semaine. Une semaine à cheval sur deux
+ * mois (ex. 31 août → 4 septembre) n'a ainsi jamais deux propriétaires — elle
+ * n'apparaît que dans un seul agenda mensuel, jamais dans les deux.
+ */
+export function weekOwnerMonth(weekStart: string): string {
+  const counts = new Map<string, number>();
+  for (let offset = 0; offset < 5; offset++) {
+    const month = formatDateOnly(addDays(parseISO(weekStart), offset)).slice(0, 7);
+    counts.set(month, (counts.get(month) ?? 0) + 1);
+  }
+  let owner = weekStart.slice(0, 7);
+  let best = 0;
+  for (const [month, count] of counts) {
+    if (count > best) {
+      best = count;
+      owner = month;
+    }
+  }
+  return owner;
+}
+
+/** Lundis (yyyy-MM-dd) des semaines "possédées" par le mois "yyyy-MM" (voir `weekOwnerMonth`). */
+export function monthWeeksOwned(month: string): string[] {
+  const [year, monthNum] = month.split("-").map(Number);
+  const firstOfMonth = new Date(year!, monthNum! - 1, 1);
+  const lastOfMonth = new Date(year!, monthNum!, 0);
+  let cursor = mondayOf(formatDateOnly(addDays(firstOfMonth, -6)));
+  const stopMonday = mondayOf(formatDateOnly(addDays(lastOfMonth, 6)));
+  const weeks: string[] = [];
+  while (cursor <= stopMonday) {
+    if (weekOwnerMonth(cursor) === month) weeks.push(cursor);
+    cursor = addWeeks(cursor, 1);
+  }
+  return weeks;
+}
+
 export function currentMonth(now: Date = new Date()): string {
   const today = todayInCasablanca(now);
   return today.slice(0, 7);

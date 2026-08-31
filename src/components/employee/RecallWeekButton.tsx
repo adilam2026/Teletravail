@@ -6,7 +6,7 @@ import { recallWeek } from "@/lib/actions/weeks";
 import { confirmDialog } from "@/lib/confirm";
 import { toast } from "@/lib/toast";
 
-export function RecallWeekButton({ planId }: { planId: string }) {
+export function RecallWeekButton({ planId, onSuccess }: { planId: string; onSuccess?: () => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -21,11 +21,16 @@ export function RecallWeekButton({ planId }: { planId: string }) {
     startTransition(() => {
       recallWeek(planId).then((result) => {
         if (!result.ok) {
+          // Échec possible par course avec une décision manager concurrente
+          // (section 6) : le statut réel a pu changer entre-temps, donc on
+          // recharge toujours dans ce cas précis, même en vue mensuelle.
           toast(result.error ?? "Rappel impossible.", "error");
-        } else {
-          toast("Semaine rappelée : vous pouvez la modifier.", "success");
+          router.refresh();
+          return;
         }
-        router.refresh();
+        toast("Semaine rappelée : vous pouvez la modifier.", "success");
+        if (onSuccess) onSuccess();
+        else router.refresh();
       });
     });
   }

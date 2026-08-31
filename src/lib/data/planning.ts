@@ -11,7 +11,7 @@ import { evaluateWeek, resolveWeeklyQuota } from "@/lib/rules-engine/engine";
 import type { WeekEvaluationInput, WeekEvaluationResult } from "@/lib/rules-engine/types";
 import type { ProfileRow, WeeklyPlanRow } from "@/lib/supabase/database.types";
 import type { AppSupabaseClient as DB } from "@/lib/supabase/server";
-import { nowIso } from "@/lib/date/casablanca";
+import { addWeeks, monthWeeksOwned, nowIso } from "@/lib/date/casablanca";
 
 const BRIDGE_BUFFER_DAYS = 14;
 
@@ -294,4 +294,130 @@ export async function loadEmployeeWeek(
   );
 
   return { plan, selectedDates, settings, result, badges, evaluationInput };
+}
+
+export interface EmployeeMonthWeek {
+  weekStart: string;
+  plan: WeeklyPlanRow;
+  badges: Record<string, DayBadge | null>;
+  evaluationInput: WeekEvaluationInput;
+  result: WeekEvaluationResult;
+}
+
+export interface EmployeeMonthContext {
+  month: string;
+  weeks: EmployeeMonthWeek[];
+}
+
+/**
+ * Équivalent de `loadEmployeeWeek`, mais pour tout un mois affiché en une
+ * seule page (section 1-24 du cahier des charges "vue mensuelle") : une
+ * poignée de requêtes couvrant toute la période, jamais une par semaine ni
+ * une par jour, pour que 4 à 6 semaines simultanées ne coûtent pas 4 à 6 fois
+ * plus cher qu'une seule (section 20). Chaque semaine du mois obtient sa
+ * propre ligne `weekly_plans` (créée si besoin, comme `loadEmployeeWeek` le
+ * fait déjà pour une semaine seule) ; les semaines voisines chargées en plus
+ * ne servent qu'au calcul des règles inter-semaines (rotation, pont
+ * vendredi/lundi) et ne sont jamais créées si elles n'existaient pas déjà.
+ */
+export async function loadEmployeeMonth(supabase: DB, profile: ProfileRow, month: string): Promise<EmployeeMonthContext> {
+  const weekStarts = monthWeeksOwned(month);
+  if (weekStarts.length === 0) return { month, weeks: [] };
+
+  const settings = await getRuleSettings(supabase);
+  const quota = await getResolvedQuota(supabase, profile, settings);
+
+  const bufferWeeksBefore = Math.max(settings.rotationEnabled ? settings.rotationWeeks : 0, 2);
+  const bufferWeeksAfter = 2;
+
+  const firstWeek = weekStarts[0]!;
+  const lastWeek = weekStarts[weekStarts.length - 1]!;
+  const rangeStartWeek = addWeeks(firstWeek, -bufferWeeksBefore);
+  const rangeEndWeek = addWeeks(lastWeek, bufferWeeksAfter);
+  const rangeStart = rangeStartWeek;
+  const rangeEnd = addDaysStr(rangeEndWeek, 4);
+
+  const touchedWeekStarts: string[] = [];
+  for (let cursor = rangeStartWeek; cursor <= rangeEndWeek; cursor = addWeeks(cursor, 1)) {
+    touchedWeekStarts.push(cursor);
+  }
+
+  const [holidays, absences, exceptions, { data: existingPlans }] = await Promise.all([
+    getHolidaysInRange(supabase, rangeStart, rangeEnd),
+    getAbsencesForEmployee(supabase, profile.id, rangeStart, rangeEnd),
+    getExceptionsFor(supabase, [profile.id], profile.squad_id ? [profile.squad_id] : [], rangeStart, rangeEnd),
+    supabase.from("weekly_plans").select("*").eq("employee_id", profile.id).in("week_start", touchedWeekStarts),
+  ]);
+
+  const planByWeek = new Map((existingPlans ?? []).map((p) => [p.week_start, p]));
+
+  const missingTargetWeeks = weekStarts.filter((w) => !planByWeek.has(w));
+  if (missingTargetWeeks.length > 0) {
+    const { data: created, error } = await supabase
+      .from("weekly_plans")
+      .insert(missingTargetWeeks.map((week_start) => ({ employee_id: profile.id, week_start, status: "draft" as const })))
+      .select("*");
+    if (error) throw new Error(error.message);
+    for (const p of created ?? []) planByWeek.set(p.week_start, p);
+  }
+
+  const planIds = [...planByWeek.values()].map((p) => p.id);
+  const { data: allDays } = planIds.length
+    ? await supabase.from("telework_days").select("weekly_plan_id, work_date").in("weekly_plan_id", planIds)
+    : { data: [] as { weekly_plan_id: string; work_date: string }[] };
+
+  const daysByPlanId = new Map<string, string[]>();
+  for (const d of allDays ?? []) {
+    const list = daysByPlanId.get(d.weekly_plan_id) ?? [];
+    list.push(d.work_date);
+    daysByPlanId.set(d.weekly_plan_id, list);
+  }
+
+  function selectedDatesForWeek(weekStart: string): string[] {
+    const plan = planByWeek.get(weekStart);
+    if (!plan) return [];
+    return daysByPlanId.get(plan.id) ?? [];
+  }
+
+  const weeks: EmployeeMonthWeek[] = weekStarts.map((weekStart) => {
+    const plan = planByWeek.get(weekStart)!;
+    const selectedDates = selectedDatesForWeek(weekStart);
+
+    const priorWeeksSelections: number[][] = [];
+    if (settings.rotationEnabled) {
+      for (let i = 1; i <= settings.rotationWeeks; i++) {
+        const priorWeek = addWeeks(weekStart, -i);
+        if (!planByWeek.has(priorWeek)) continue;
+        const dates = selectedDatesForWeek(priorWeek);
+        const weekdaySet = dates.map((date) => weekDates(priorWeek).indexOf(date) + 1).filter((n) => n > 0);
+        priorWeeksSelections.push(weekdaySet);
+      }
+    }
+
+    const previousFridayDate = addDaysStr(weekStart, -3);
+    const previousWeekStart = addWeeks(weekStart, -1);
+    const nextMondayWeek = addWeeks(weekStart, 1);
+
+    const evaluationInput: WeekEvaluationInput = {
+      weekStart,
+      selectedDates,
+      employee: { employeeId: profile.id, employeeType: profile.employee_type ?? "internal", weeklyQuota: quota },
+      settings,
+      holidays,
+      absences,
+      exceptions,
+      priorWeeksSelections,
+      adjacentSelections: {
+        previousFriday: selectedDatesForWeek(previousWeekStart).includes(previousFridayDate),
+        nextMonday: selectedDatesForWeek(nextMondayWeek).includes(nextMondayWeek),
+      },
+      now: nowIso(),
+    };
+    const result = evaluateWeek(evaluationInput);
+    const badges = Object.fromEntries(weekDates(weekStart).map((date) => [date, buildDayBadge(date, holidays, absences, exceptions)]));
+
+    return { weekStart, plan, badges, evaluationInput, result };
+  });
+
+  return { month, weeks };
 }

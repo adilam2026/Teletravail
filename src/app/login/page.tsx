@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { resolveLoginEmail } from "@/lib/actions/auth";
+import { signInWithLogin } from "@/lib/actions/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,15 +16,9 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const email = await resolveLoginEmail(login);
-      if (!email) {
-        setError("Identifiant ou mot de passe incorrect.");
-        return;
-      }
-      const supabase = createClient();
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) {
-        setError("Identifiant ou mot de passe incorrect.");
+      const result = await signInWithLogin(login, password);
+      if (!result.ok) {
+        setError(result.error ?? "Identifiant ou mot de passe incorrect.");
         return;
       }
       router.replace("/");

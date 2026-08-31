@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { signOut } from "@/lib/actions/auth";
 
 export interface NavItem {
   href: string;
@@ -28,8 +28,7 @@ export function NavSidebar({
   const router = useRouter();
 
   async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    await signOut();
     router.replace("/login");
     router.refresh();
   }

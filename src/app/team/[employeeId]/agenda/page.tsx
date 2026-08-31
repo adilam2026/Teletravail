@@ -2,11 +2,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { loadEmployeeWeek } from "@/lib/data/planning";
+import { loadEmployeeMonth } from "@/lib/data/planning";
 import { resolveTargetProfile } from "@/lib/data/hierarchy";
-import { addWeeks, currentWeekStart, mondayOf } from "@/lib/date/casablanca";
-import { WeekGrid } from "@/components/calendar/WeekGrid";
-import { WeekHistoryButton } from "@/components/calendar/WeekHistoryButton";
+import { currentMonth, shiftMonth } from "@/lib/date/casablanca";
+import { MonthWeekCard } from "@/components/calendar/MonthWeekCard";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrateur",
@@ -16,34 +15,42 @@ const ROLE_LABELS: Record<string, string> = {
   employee: "Collaborateur",
 };
 
+function weekRangeLabel(dates: string[]): string {
+  const start = new Date(`${dates[0]}T00:00:00`);
+  const end = new Date(`${dates[4]}T00:00:00`);
+  const startDay = start.getDate();
+  const endDay = end.getDate();
+  const startMonth = start.toLocaleDateString("fr-FR", { month: "long" });
+  const endMonth = end.toLocaleDateString("fr-FR", { month: "long" });
+  return startMonth === endMonth ? `${startDay} – ${endDay} ${endMonth}` : `${startDay} ${startMonth} – ${endDay} ${endMonth}`;
+}
+
 /**
- * Un supérieur prépare/ajuste la semaine d'un rattaché (section 14-19) :
- * même interface que l'agenda personnel (WeekGrid, remplacement
- * intelligent, quota Interne/Externe...), rien n'est dupliqué — seule
- * l'autorisation change, portée par `resolveTargetProfile` (RLS
- * `is_superior_of`, jamais uniquement l'interface).
+ * Un supérieur prépare/ajuste le mois complet d'un rattaché (section 14-19
+ * et 19 "vue mensuelle manager") : même écran mensuel multi-semaines que
+ * l'agenda personnel, seule l'autorisation change, portée par
+ * `resolveTargetProfile` (RLS `is_superior_of`, jamais uniquement l'UI).
  */
 export default async function TeamMemberAgendaPage({
   params,
   searchParams,
 }: {
   params: Promise<{ employeeId: string }>;
-  searchParams: Promise<{ week?: string }>;
+  searchParams: Promise<{ month?: string }>;
 }) {
   const { profile: actor } = await requireUser();
   const { employeeId } = await params;
   if (employeeId === actor.id) redirect("/employee/agenda");
 
   const sp = await searchParams;
-  const weekStart = sp.week ? mondayOf(sp.week) : currentWeekStart();
+  const month = sp.month ?? currentMonth();
   const supabase = await createClient();
 
   const { profile: target } = await resolveTargetProfile(supabase, actor, employeeId);
   if (!target) notFound();
 
-  const week = await loadEmployeeWeek(supabase, target, weekStart);
-  const editable = week.plan.status === "draft" || week.plan.status === "needs_changes" || week.plan.status === "submitted";
-  const rangeLabel = `${week.result.days[0]!.date.slice(8, 10)}/${week.result.days[0]!.date.slice(5, 7)} au ${week.result.days[4]!.date.slice(8, 10)}/${week.result.days[4]!.date.slice(5, 7)}`;
+  const { weeks } = await loadEmployeeMonth(supabase, target, month);
+  const monthLabel = new Date(`${month}-01T00:00:00`).toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
 
   return (
     <div className="space-y-6">
@@ -58,39 +65,36 @@ export default async function TeamMemberAgendaPage({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Planning — {target.first_name} {target.last_name}
-          </h1>
-          <p className="text-sm text-slate-500">Semaine du {rangeLabel}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/team/${target.id}/agenda?week=${addWeeks(weekStart, -1)}`} className="btn-secondary">
-            ← Semaine précédente
+        <h1 className="text-2xl font-semibold text-slate-900">
+          Planning — {target.first_name} {target.last_name}
+        </h1>
+        <div className="flex items-center gap-2">
+          <Link href={`/team/${target.id}/agenda?month=${shiftMonth(month, -1)}`} className="btn-secondary" aria-label="Mois précédent">
+            ‹
           </Link>
-          <Link href={`/team/${target.id}/agenda?week=${addWeeks(weekStart, 1)}`} className="btn-secondary">
-            Semaine suivante →
+          <span className="min-w-[10rem] text-center text-base font-semibold capitalize text-slate-900">{monthLabel}</span>
+          <Link href={`/team/${target.id}/agenda?month=${shiftMonth(month, 1)}`} className="btn-secondary" aria-label="Mois suivant">
+            ›
           </Link>
-          <WeekHistoryButton planId={week.plan.id} />
         </div>
       </div>
 
-      <WeekGrid
-        weekStart={weekStart}
-        planId={week.plan.id}
-        evaluationInput={week.evaluationInput}
-        badges={week.badges}
-        editable={editable}
-        planStatus={week.plan.status}
-        targetEmployeeId={target.id}
-      />
-
-      {week.plan.status === "needs_changes" && week.plan.manager_comment && (
-        <div className="card border-amber-200 bg-amber-50">
-          <p className="text-sm font-semibold text-amber-800">Modification demandée</p>
-          <p className="mt-2 rounded-lg bg-white px-3 py-2 text-sm text-amber-900">« {week.plan.manager_comment} »</p>
-        </div>
-      )}
+      <div className="space-y-4">
+        {weeks.map((week) => (
+          <MonthWeekCard
+            key={week.weekStart}
+            weekStart={week.weekStart}
+            rangeLabel={weekRangeLabel(week.result.days.map((d) => d.date))}
+            planId={week.plan.id}
+            initialStatus={week.plan.status}
+            managerComment={week.plan.manager_comment}
+            evaluationInput={week.evaluationInput}
+            badges={week.badges}
+            targetEmployeeId={target.id}
+          />
+        ))}
+        {weeks.length === 0 && <p className="card text-center text-sm text-slate-400">Aucune semaine pour ce mois.</p>}
+      </div>
     </div>
   );
 }

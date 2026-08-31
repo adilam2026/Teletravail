@@ -31,6 +31,8 @@ export interface MonthWeekCardProps {
   managerComment: string | null;
   evaluationInput: WeekEvaluationInput;
   badges: Record<string, DayBadge | null>;
+  /** Fourni quand un supérieur prépare/ajuste la semaine d'un rattaché (section 14-19) — sinon, l'agenda de l'acteur lui-même. */
+  targetEmployeeId?: string;
 }
 
 /**
@@ -40,15 +42,27 @@ export interface MonthWeekCardProps {
  * état (statut) totalement local, pour que soumettre/rappeler cette semaine
  * ne recharge jamais les autres cartes du mois (section 21).
  */
-export function MonthWeekCard({ weekStart, rangeLabel, planId, initialStatus, managerComment, evaluationInput, badges }: MonthWeekCardProps) {
+export function MonthWeekCard({
+  weekStart,
+  rangeLabel,
+  planId,
+  initialStatus,
+  managerComment,
+  evaluationInput,
+  badges,
+  targetEmployeeId,
+}: MonthWeekCardProps) {
   const [status, setStatus] = useState<PlanStatus>(initialStatus);
-  const editable = EDITABLE_STATUSES.includes(status);
+  // Un supérieur peut ajuster une semaine même déjà soumise (préparation/correction avant
+  // décision) ; seul le collaborateur édite lui-même uniquement brouillon/à-modifier.
+  const editable = targetEmployeeId ? status !== "validated" : EDITABLE_STATUSES.includes(status);
 
   const { result, dates, swapPrompt, toast, handleClick, handleSwapChoice, cancelSwap } = useWeekEditor({
     weekStart,
     evaluationInput,
     badges,
     editable,
+    targetEmployeeId,
   });
 
   return (
@@ -126,6 +140,7 @@ export function MonthWeekCard({ weekStart, rangeLabel, planId, initialStatus, ma
           <SubmitWeekButton
             weekStart={weekStart}
             canSubmit={result.canSubmit}
+            targetEmployeeId={targetEmployeeId}
             label="Soumettre ma demande"
             pendingLabel="Envoi..."
             onSuccess={() => setStatus("submitted")}
@@ -136,6 +151,7 @@ export function MonthWeekCard({ weekStart, rangeLabel, planId, initialStatus, ma
           <SubmitWeekButton
             weekStart={weekStart}
             canSubmit={result.canSubmit}
+            targetEmployeeId={targetEmployeeId}
             label="Modifier puis resoumettre"
             pendingLabel="Envoi..."
             onSuccess={() => setStatus("submitted")}
@@ -143,10 +159,12 @@ export function MonthWeekCard({ weekStart, rangeLabel, planId, initialStatus, ma
         )}
 
         {/* Le statut ("En attente de validation" / "Validée ✓"...) est déjà porté par le
-            badge d'en-tête (section 5) : pas de répétition ici, seulement l'action disponible. */}
-        {status === "submitted" && <RecallWeekButton planId={planId} onSuccess={() => setStatus("draft")} />}
+            badge d'en-tête (section 5) : pas de répétition ici, seulement l'action disponible.
+            Rappeler et demander une réouverture restent des privilèges du collaborateur
+            lui-même — jamais affichés quand un supérieur agit pour son compte. */}
+        {status === "submitted" && !targetEmployeeId && <RecallWeekButton planId={planId} onSuccess={() => setStatus("draft")} />}
 
-        {status === "validated" && <ReopenWeekButton planId={planId} />}
+        {status === "validated" && !targetEmployeeId && <ReopenWeekButton planId={planId} />}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { rejectWeek, requestWeekChanges, validateWeek, validateWeeksInBulk } from "@/lib/actions/weeks";
+import { requestWeekChanges, validateWeek, validateWeeksInBulk } from "@/lib/actions/weeks";
 import { ComplianceBadge } from "@/components/StatusBadge";
 import type { WeekCompliance } from "@/lib/rules-engine";
 
@@ -20,7 +20,7 @@ export function ValidationBoard({ rows }: { rows: ValidationRowData[] }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
-  const [commentFor, setCommentFor] = useState<{ planId: string; mode: "reject" | "changes" } | null>(null);
+  const [commentFor, setCommentFor] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -63,11 +63,10 @@ export function ValidationBoard({ rows }: { rows: ValidationRowData[] }) {
   }
 
   function submitComment() {
-    if (!commentFor || !comment.trim()) return;
+    if (!commentFor) return;
     setError(null);
     startTransition(async () => {
-      const action = commentFor.mode === "reject" ? rejectWeek : requestWeekChanges;
-      const result = await action(commentFor.planId, comment.trim());
+      const result = await requestWeekChanges(commentFor, comment.trim() || undefined);
       if (!result.ok) setError(result.error ?? "Erreur");
       setCommentFor(null);
       setComment("");
@@ -123,32 +122,24 @@ export function ValidationBoard({ rows }: { rows: ValidationRowData[] }) {
 
             <div className="flex flex-wrap gap-2 pl-7">
               <button type="button" className="btn-primary px-3 py-1.5 text-xs" disabled={pending} onClick={() => handleValidate(row.planId)}>
-                Valider
+                ✓ Valider
               </button>
               <button
                 type="button"
                 className="btn-secondary px-3 py-1.5 text-xs"
                 disabled={pending}
-                onClick={() => setCommentFor({ planId: row.planId, mode: "changes" })}
+                onClick={() => setCommentFor(row.planId)}
               >
-                Demander une modification
-              </button>
-              <button
-                type="button"
-                className="btn-secondary px-3 py-1.5 text-xs text-rose-600"
-                disabled={pending}
-                onClick={() => setCommentFor({ planId: row.planId, mode: "reject" })}
-              >
-                Refuser
+                ↩ Demander modification
               </button>
             </div>
 
-            {commentFor?.planId === row.planId && (
+            {commentFor === row.planId && (
               <div className="ml-7 space-y-2 rounded-xl bg-slate-50 p-3">
                 <textarea
                   className="input"
                   rows={2}
-                  placeholder="Commentaire (obligatoire)"
+                  placeholder="Commentaire (optionnel)"
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                 />
@@ -156,7 +147,7 @@ export function ValidationBoard({ rows }: { rows: ValidationRowData[] }) {
                   <button type="button" className="btn-secondary px-3 py-1.5 text-xs" onClick={() => setCommentFor(null)}>
                     Annuler
                   </button>
-                  <button type="button" className="btn-primary px-3 py-1.5 text-xs" disabled={!comment.trim() || pending} onClick={submitComment}>
+                  <button type="button" className="btn-primary px-3 py-1.5 text-xs" disabled={pending} onClick={submitComment}>
                     Envoyer
                   </button>
                 </div>

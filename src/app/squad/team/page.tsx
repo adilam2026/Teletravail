@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getSquadLedBy, getSquadMembers } from "@/lib/data/hierarchy";
@@ -32,7 +33,12 @@ export default async function SquadTeamPage() {
                 {m.status === "inactive" && " · Inactif"}
               </p>
             </div>
-            <UserRowActions userId={m.id} status={m.status} userLabel={`${m.first_name} ${m.last_name}`} />
+            <div className="flex items-center gap-2">
+              <Link href={`/team/${m.id}/agenda`} className="btn-secondary px-3 py-1.5 text-xs">
+                Modifier le planning
+              </Link>
+              <UserRowActions userId={m.id} status={m.status} userLabel={`${m.first_name} ${m.last_name}`} />
+            </div>
           </div>
         ))}
         {members.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-400">Aucun collaborateur pour le moment.</p>}

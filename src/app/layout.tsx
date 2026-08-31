@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { PwaRegister } from "@/components/PwaRegister";
+import { Toaster } from "@/components/ui/Toaster";
+import { ConfirmDialogHost } from "@/components/ui/ConfirmDialogHost";
 
 export const metadata: Metadata = {
   title: "Télétravail",
@@ -24,6 +26,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen font-sans antialiased">
         <PwaRegister />
         {children}
+        <Toaster />
+        <ConfirmDialogHost />
       </body>
     </html>
   );

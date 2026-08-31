@@ -18,6 +18,8 @@ export interface WeekGridProps {
   badges: Record<string, DayBadge | null>;
   editable: boolean;
   planStatus: PlanStatus;
+  /** Fourni quand un supérieur prépare/ajuste la semaine d'un rattaché (section 14-19) — sinon, l'agenda de l'acteur lui-même. */
+  targetEmployeeId?: string;
 }
 
 function formatDayNumber(date: string): string {
@@ -38,7 +40,7 @@ function dayLabel(dates: string[], date: string): string {
  * toast bref explique pourquoi (jamais de spinner bloquant, jamais de
  * rechargement de page).
  */
-export function WeekGrid({ weekStart, planId, evaluationInput, badges, editable, planStatus }: WeekGridProps) {
+export function WeekGrid({ weekStart, planId, evaluationInput, badges, editable, planStatus, targetEmployeeId }: WeekGridProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(evaluationInput.selectedDates));
   const [swapPrompt, setSwapPrompt] = useState<{ date: string; candidates: string[] } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -79,14 +81,14 @@ export function WeekGrid({ weekStart, planId, evaluationInput, badges, editable,
     if (day.selected) {
       const next = new Set(selected);
       next.delete(day.date);
-      commit(next, () => toggleTeleworkDay(weekStart, day.date));
+      commit(next, () => toggleTeleworkDay(weekStart, day.date, undefined, targetEmployeeId));
       return;
     }
 
     if (day.allowed) {
       const next = new Set(selected);
       next.add(day.date);
-      commit(next, () => toggleTeleworkDay(weekStart, day.date));
+      commit(next, () => toggleTeleworkDay(weekStart, day.date, undefined, targetEmployeeId));
       return;
     }
 
@@ -96,7 +98,7 @@ export function WeekGrid({ weekStart, planId, evaluationInput, badges, editable,
         const next = new Set(selected);
         next.delete(replaceDate);
         next.add(day.date);
-        commit(next, () => toggleTeleworkDay(weekStart, day.date, replaceDate));
+        commit(next, () => toggleTeleworkDay(weekStart, day.date, replaceDate, targetEmployeeId));
       } else {
         setSwapPrompt({ date: day.date, candidates: day.swapCandidates });
       }
@@ -109,7 +111,7 @@ export function WeekGrid({ weekStart, planId, evaluationInput, badges, editable,
     const next = new Set(selected);
     next.delete(replaceDate);
     next.add(date);
-    commit(next, () => toggleTeleworkDay(weekStart, date, replaceDate));
+    commit(next, () => toggleTeleworkDay(weekStart, date, replaceDate, targetEmployeeId));
   }
 
   return (
@@ -123,7 +125,7 @@ export function WeekGrid({ weekStart, planId, evaluationInput, badges, editable,
           <span className="text-sm font-medium text-slate-600">
             Télétravail : {result.selectedCount} / {result.quota} jour{result.quota > 1 ? "s" : ""}
           </span>
-          {planStatus === "submitted" && <RecallWeekButton planId={planId} />}
+          {planStatus === "submitted" && !targetEmployeeId && <RecallWeekButton planId={planId} />}
         </div>
       </div>
 
@@ -209,7 +211,7 @@ export function WeekGrid({ weekStart, planId, evaluationInput, badges, editable,
 
       {editable && (
         <div className="flex justify-end">
-          <SubmitWeekButton weekStart={weekStart} canSubmit={result.canSubmit} />
+          <SubmitWeekButton weekStart={weekStart} canSubmit={result.canSubmit} targetEmployeeId={targetEmployeeId} />
         </div>
       )}
     </div>

@@ -4,7 +4,15 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { submitWeek } from "@/lib/actions/weeks";
 
-export function SubmitWeekButton({ weekStart, canSubmit }: { weekStart: string; canSubmit: boolean }) {
+export function SubmitWeekButton({
+  weekStart,
+  canSubmit,
+  targetEmployeeId,
+}: {
+  weekStart: string;
+  canSubmit: boolean;
+  targetEmployeeId?: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -12,7 +20,7 @@ export function SubmitWeekButton({ weekStart, canSubmit }: { weekStart: string; 
   function handleSubmit() {
     setError(null);
     startTransition(async () => {
-      const result = await submitWeek(weekStart);
+      const result = await submitWeek(weekStart, targetEmployeeId);
       if (!result.ok) {
         setError(result.error ?? "Impossible de soumettre la semaine.");
         return;

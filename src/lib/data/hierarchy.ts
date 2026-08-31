@@ -14,6 +14,26 @@ import type { TeamPresenceDay } from "@/lib/rules-engine/types";
  * plutôt que d'un simple `manager_id` sur le profil — cf. migration 0004.
  */
 
+/**
+ * Résout le profil d'un collaborateur "agi pour" (saisie manager pour un
+ * rattaché, section 14-19) : quand `targetEmployeeId` est fourni et diffère
+ * de l'acteur, la lecture passe par le client RLS-lié — `profiles_select`
+ * n'autorise déjà que soi-même ou un supérieur (`is_superior_of`), donc un
+ * `null` ici signifie "hors périmètre" sans avoir à dupliquer cette règle
+ * côté application (l'autorisation réelle reste portée par la RLS).
+ */
+export async function resolveTargetProfile(
+  supabase: DB,
+  actor: ProfileRow,
+  targetEmployeeId?: string | null
+): Promise<{ profile: ProfileRow | null; isActingOnBehalf: boolean }> {
+  if (!targetEmployeeId || targetEmployeeId === actor.id) {
+    return { profile: actor, isActingOnBehalf: false };
+  }
+  const { data } = await supabase.from("profiles").select("*").eq("id", targetEmployeeId).maybeSingle();
+  return { profile: data ?? null, isActingOnBehalf: true };
+}
+
 export async function getSquadLedBy(supabase: DB, leadId: string): Promise<SquadRow | null> {
   const { data } = await supabase.from("squads").select("*").eq("manager_id", leadId).maybeSingle();
   return data ?? null;

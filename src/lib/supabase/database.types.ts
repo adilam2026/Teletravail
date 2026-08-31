@@ -172,6 +172,73 @@ export type TeleworkDayInsert = {
   work_date: string;
 }
 
+export type WeeklyPlanVersionDecisionCode = "validated" | "rejected" | "changes_requested";
+
+export type WeeklyPlanVersionRow = {
+  id: string;
+  weekly_plan_id: string;
+  version_number: number;
+  submitted_at: string;
+  submitted_by: string | null;
+  decision: WeeklyPlanVersionDecisionCode | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  comment: string | null;
+  created_at: string;
+}
+
+export type WeeklyPlanVersionInsert = {
+  weekly_plan_id: string;
+  version_number: number;
+  submitted_by?: string | null;
+}
+
+export type WeeklyPlanVersionUpdate = {
+  decision?: WeeklyPlanVersionDecisionCode | null;
+  decided_at?: string | null;
+  decided_by?: string | null;
+  comment?: string | null;
+}
+
+export type WeeklyPlanVersionDayRow = {
+  id: string;
+  version_id: string;
+  work_date: string;
+}
+
+export type WeeklyPlanVersionDayInsert = {
+  version_id: string;
+  work_date: string;
+}
+
+export type WeeklyPlanEventRow = {
+  id: string;
+  weekly_plan_id: string;
+  version_number: number | null;
+  event_type: string;
+  occurred_at: string;
+  actor_id: string | null;
+  actor_role: AppRole | null;
+  status_before: PlanStatus | null;
+  status_after: PlanStatus | null;
+  days_before: string[] | null;
+  days_after: string[] | null;
+  comment: string | null;
+}
+
+export type WeeklyPlanEventInsert = {
+  weekly_plan_id: string;
+  version_number?: number | null;
+  event_type: string;
+  actor_id?: string | null;
+  actor_role?: AppRole | null;
+  status_before?: PlanStatus | null;
+  status_after?: PlanStatus | null;
+  days_before?: string[] | null;
+  days_after?: string[] | null;
+  comment?: string | null;
+}
+
 export type AbsenceTypeRow = {
   id: string;
   name: string;
@@ -346,6 +413,9 @@ export type Database = {
       rule_overrides: Table<RuleOverrideRow, RuleOverrideInsert, Partial<RuleOverrideRow>>;
       weekly_plans: Table<WeeklyPlanRow, WeeklyPlanInsert, Partial<WeeklyPlanRow>>;
       telework_days: Table<TeleworkDayRow, TeleworkDayInsert, Partial<TeleworkDayRow>>;
+      weekly_plan_versions: Table<WeeklyPlanVersionRow, WeeklyPlanVersionInsert, WeeklyPlanVersionUpdate>;
+      weekly_plan_version_days: Table<WeeklyPlanVersionDayRow, WeeklyPlanVersionDayInsert, Partial<WeeklyPlanVersionDayRow>>;
+      weekly_plan_events: Table<WeeklyPlanEventRow, WeeklyPlanEventInsert, Partial<WeeklyPlanEventRow>>;
       absence_types: Table<AbsenceTypeRow, AbsenceTypeInsert, Partial<AbsenceTypeRow>>;
       absences: Table<AbsenceRow, AbsenceInsert, Partial<AbsenceRow>>;
       public_holidays: Table<PublicHolidayRow, PublicHolidayInsert, Partial<PublicHolidayRow>>;

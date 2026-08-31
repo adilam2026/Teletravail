@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { rejectWeek, requestWeekChanges, validateWeek } from "@/lib/actions/weeks";
+import { requestWeekChanges, validateWeek } from "@/lib/actions/weeks";
+import { toast } from "@/lib/toast";
 
 /**
  * Décision en un clic directement depuis une page de planning (Squad/Tribe/DU) :
@@ -15,15 +16,14 @@ export function QuickDecisionButton({ planId }: { planId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
 
-  function decide(action: (planId: string) => Promise<{ ok: boolean; error?: string }>) {
-    setError(null);
+  function decide(action: (planId: string) => Promise<{ ok: boolean; error?: string }>, successMessage: string) {
     startTransition(async () => {
       const result = await action(planId);
       if (!result.ok) {
-        setError(result.error ?? "Action impossible.");
-        return;
+        toast(result.error ?? "Action impossible.", "error");
+      } else {
+        toast(successMessage, "success");
       }
       setOpen(false);
       router.refresh();
@@ -39,37 +39,26 @@ export function QuickDecisionButton({ planId }: { planId: string }) {
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex gap-1.5">
-        <button
-          type="button"
-          className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
-          disabled={pending}
-          onClick={() => decide(validateWeek)}
-        >
-          ✅ Valider
-        </button>
-        <button
-          type="button"
-          className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100"
-          disabled={pending}
-          onClick={() => decide(requestWeekChanges)}
-        >
-          🔁 Modifier
-        </button>
-        <button
-          type="button"
-          className="rounded-lg bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
-          disabled={pending}
-          onClick={() => decide(rejectWeek)}
-        >
-          ❌ Refuser
-        </button>
-        <button type="button" className="px-1.5 py-1 text-xs text-slate-400 hover:text-slate-600" onClick={() => setOpen(false)}>
-          ✕
-        </button>
-      </div>
-      {error && <p className="text-xs text-rose-600">{error}</p>}
+    <div className="flex gap-1.5">
+      <button
+        type="button"
+        className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+        disabled={pending}
+        onClick={() => decide(validateWeek, "Semaine validée.")}
+      >
+        ✅ Valider
+      </button>
+      <button
+        type="button"
+        className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100"
+        disabled={pending}
+        onClick={() => decide(requestWeekChanges, "Modification demandée au collaborateur.")}
+      >
+        🔁 Demander modification
+      </button>
+      <button type="button" className="px-1.5 py-1 text-xs text-slate-400 hover:text-slate-600" onClick={() => setOpen(false)}>
+        ✕
+      </button>
     </div>
   );
 }

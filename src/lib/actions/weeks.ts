@@ -4,46 +4,115 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth/session";
 import { loadEmployeeWeek } from "@/lib/data/planning";
-import { getDirectValidatorId } from "@/lib/data/hierarchy";
+import { getDirectValidatorId, resolveTargetProfile } from "@/lib/data/hierarchy";
 import { logAudit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import type { ActionResult } from "@/lib/actions/account";
+import type { AppSupabaseClient } from "@/lib/supabase/server";
+import type { PlanStatus, ProfileRow, WeeklyPlanVersionDecisionCode } from "@/lib/supabase/database.types";
 
-const EDITABLE_STATUSES = ["draft", "needs_changes"];
+const SELF_EDITABLE_STATUSES: PlanStatus[] = ["draft", "needs_changes"];
+const DELEGATE_EDITABLE_STATUSES: PlanStatus[] = ["draft", "needs_changes", "submitted"];
 const VALIDATION_PATHS = ["/squad/validation", "/squad/team", "/tribe/validation", "/tribe/overview", "/du/validation", "/du/overview"];
 
 function revalidateValidationViews() {
   for (const path of VALIDATION_PATHS) revalidatePath(path);
 }
 
+function revalidateWeekViews() {
+  revalidatePath("/employee/agenda");
+  revalidatePath("/employee/weeks");
+  revalidateValidationViews();
+}
+
+/**
+ * Journal détaillé du cycle de vie d'une semaine (section 11-12 du cahier
+ * des charges) : distinct du `audit_logs` générique, dédié à reconstruire une
+ * timeline lisible. Ne doit jamais faire échouer l'action métier : un souci
+ * d'écriture du journal n'empêche pas l'opération réelle d'avoir eu lieu.
+ */
+async function logPlanEvent(
+  supabase: AppSupabaseClient,
+  params: {
+    weeklyPlanId: string;
+    versionNumber?: number | null;
+    eventType: string;
+    actor: ProfileRow;
+    statusBefore?: PlanStatus | null;
+    statusAfter?: PlanStatus | null;
+    daysBefore?: string[] | null;
+    daysAfter?: string[] | null;
+    comment?: string | null;
+  }
+): Promise<void> {
+  await supabase.from("weekly_plan_events").insert({
+    weekly_plan_id: params.weeklyPlanId,
+    version_number: params.versionNumber ?? null,
+    event_type: params.eventType,
+    actor_id: params.actor.id,
+    actor_role: params.actor.role,
+    status_before: params.statusBefore ?? null,
+    status_after: params.statusAfter ?? null,
+    days_before: params.daysBefore ?? null,
+    days_after: params.daysAfter ?? null,
+    comment: params.comment ?? null,
+  });
+}
+
+async function currentSelectedDates(supabase: AppSupabaseClient, planId: string): Promise<string[]> {
+  const { data } = await supabase.from("telework_days").select("work_date").eq("weekly_plan_id", planId);
+  return (data ?? []).map((d) => d.work_date).sort();
+}
+
 /**
  * Bascule un jour en télétravail / retour bureau, en revalidant toutes les
  * règles côté serveur. `replaceDate`, quand fourni, retire ce jour déjà
  * sélectionné dans le même mouvement — remplacement intelligent quand le
- * quota est atteint (section 7-8) : le client choisit ou déduit ce paramètre
- * à partir de `swapCandidates` renvoyé par le moteur de règles.
+ * quota est atteint. `targetEmployeeId`, quand fourni et différent de
+ * l'acteur, permet à un supérieur de préparer/ajuster la semaine d'un
+ * rattaché (section 14-19) — la RLS reste l'autorité finale sur le
+ * périmètre autorisé, ce code ne fait que réagir proprement à un refus.
  */
-export async function toggleTeleworkDay(weekStart: string, date: string, replaceDate?: string): Promise<ActionResult> {
-  const { profile } = await requireUser();
+export async function toggleTeleworkDay(
+  weekStart: string,
+  date: string,
+  replaceDate?: string,
+  targetEmployeeId?: string
+): Promise<ActionResult> {
+  const { profile: actor } = await requireUser();
   const supabase = await createClient();
 
-  const week = await loadEmployeeWeek(supabase, profile, weekStart);
-  if (!EDITABLE_STATUSES.includes(week.plan.status)) {
+  const { profile: target, isActingOnBehalf } = await resolveTargetProfile(supabase, actor, targetEmployeeId);
+  if (!target) return { ok: false, error: "Collaborateur introuvable ou hors de votre périmètre." };
+
+  const week = await loadEmployeeWeek(supabase, target, weekStart);
+  const editableStatuses = isActingOnBehalf ? DELEGATE_EDITABLE_STATUSES : SELF_EDITABLE_STATUSES;
+  if (!editableStatuses.includes(week.plan.status)) {
     return { ok: false, error: "Cette semaine est verrouillée et ne peut plus être modifiée." };
   }
 
+  const before = week.selectedDates.slice().sort();
   const isSelected = week.selectedDates.includes(date);
 
-  if (isSelected) {
-    const { error } = await supabase
-      .from("telework_days")
-      .delete()
-      .eq("weekly_plan_id", week.plan.id)
-      .eq("work_date", date);
-    if (error) return { ok: false, error: "Impossible de retirer ce jour." };
+  async function finish(eventType: string): Promise<ActionResult> {
+    const after = await currentSelectedDates(supabase, week.plan.id);
+    await logPlanEvent(supabase, {
+      weeklyPlanId: week.plan.id,
+      eventType: isActingOnBehalf ? "modified_by_manager" : eventType,
+      actor,
+      daysBefore: before,
+      daysAfter: after,
+    });
     revalidatePath("/employee/agenda");
     revalidatePath("/employee/weeks");
+    if (isActingOnBehalf) revalidateValidationViews();
     return { ok: true };
+  }
+
+  if (isSelected) {
+    const { error } = await supabase.from("telework_days").delete().eq("weekly_plan_id", week.plan.id).eq("work_date", date);
+    if (error) return { ok: false, error: "Impossible de retirer ce jour." };
+    return finish("day_removed");
   }
 
   const day = week.result.days.find((d) => d.date === date);
@@ -51,43 +120,40 @@ export async function toggleTeleworkDay(weekStart: string, date: string, replace
 
   if (!day.allowed) {
     if (day.swapCandidates && day.swapCandidates.length > 0) {
-      const target = replaceDate ?? (day.swapCandidates.length === 1 ? day.swapCandidates[0] : undefined);
-      if (!target || !day.swapCandidates.includes(target)) {
+      const swapTarget = replaceDate ?? (day.swapCandidates.length === 1 ? day.swapCandidates[0] : undefined);
+      if (!swapTarget || !day.swapCandidates.includes(swapTarget)) {
         return { ok: false, error: "Choisissez le jour à remplacer." };
       }
       const { error: deleteError } = await supabase
         .from("telework_days")
         .delete()
         .eq("weekly_plan_id", week.plan.id)
-        .eq("work_date", target);
+        .eq("work_date", swapTarget);
       if (deleteError) return { ok: false, error: "Impossible de libérer le jour à remplacer." };
 
-      const { error: insertError } = await supabase
-        .from("telework_days")
-        .insert({ weekly_plan_id: week.plan.id, work_date: date });
+      const { error: insertError } = await supabase.from("telework_days").insert({ weekly_plan_id: week.plan.id, work_date: date });
       if (insertError) return { ok: false, error: "Impossible d'ajouter ce jour." };
 
-      revalidatePath("/employee/agenda");
-      revalidatePath("/employee/weeks");
-      return { ok: true };
+      return finish("day_replaced");
     }
     return { ok: false, error: day.reason ?? "Ce jour n'est pas disponible pour le télétravail." };
   }
 
   const { error } = await supabase.from("telework_days").insert({ weekly_plan_id: week.plan.id, work_date: date });
   if (error) return { ok: false, error: "Impossible d'ajouter ce jour." };
-
-  revalidatePath("/employee/agenda");
-  revalidatePath("/employee/weeks");
-  return { ok: true };
+  return finish("day_added");
 }
 
-export async function submitWeek(weekStart: string): Promise<ActionResult> {
-  const { profile } = await requireUser();
+export async function submitWeek(weekStart: string, targetEmployeeId?: string): Promise<ActionResult> {
+  const { profile: actor } = await requireUser();
   const supabase = await createClient();
 
-  const week = await loadEmployeeWeek(supabase, profile, weekStart);
-  if (!EDITABLE_STATUSES.includes(week.plan.status)) {
+  const { profile: target, isActingOnBehalf } = await resolveTargetProfile(supabase, actor, targetEmployeeId);
+  if (!target) return { ok: false, error: "Collaborateur introuvable ou hors de votre périmètre." };
+
+  const week = await loadEmployeeWeek(supabase, target, weekStart);
+  const editableStatuses = isActingOnBehalf ? DELEGATE_EDITABLE_STATUSES.filter((s) => s !== "submitted") : SELF_EDITABLE_STATUSES;
+  if (!editableStatuses.includes(week.plan.status)) {
     return { ok: false, error: "Cette semaine est déjà soumise ou verrouillée." };
   }
   if (!week.result.canSubmit) {
@@ -98,26 +164,73 @@ export async function submitWeek(weekStart: string): Promise<ActionResult> {
     return { ok: false, error: "Sélectionnez au moins un jour avant de soumettre, ou laissez la semaine en brouillon." };
   }
 
-  const { error } = await supabase
+  const statusBefore = week.plan.status;
+  const { data: updated, error } = await supabase
     .from("weekly_plans")
     .update({ status: "submitted", submitted_at: new Date().toISOString() })
-    .eq("id", week.plan.id);
-  if (error) return { ok: false, error: "Impossible de soumettre la semaine." };
+    .eq("id", week.plan.id)
+    .eq("status", statusBefore)
+    .select("*")
+    .maybeSingle();
+  if (error || !updated) return { ok: false, error: "Impossible de soumettre la semaine." };
+
+  const { data: existingVersions } = await supabase
+    .from("weekly_plan_versions")
+    .select("version_number")
+    .eq("weekly_plan_id", week.plan.id)
+    .order("version_number", { ascending: false })
+    .limit(1);
+  const versionNumber = (existingVersions?.[0]?.version_number ?? 0) + 1;
+
+  await supabase.from("weekly_plan_versions").insert({ weekly_plan_id: week.plan.id, version_number: versionNumber, submitted_by: actor.id });
+  if (week.selectedDates.length > 0) {
+    const { data: versionRow } = await supabase
+      .from("weekly_plan_versions")
+      .select("id")
+      .eq("weekly_plan_id", week.plan.id)
+      .eq("version_number", versionNumber)
+      .single();
+    if (versionRow) {
+      await supabase.from("weekly_plan_version_days").insert(week.selectedDates.map((work_date) => ({ version_id: versionRow.id, work_date })));
+    }
+  }
+
+  await logPlanEvent(supabase, {
+    weeklyPlanId: week.plan.id,
+    versionNumber,
+    eventType: versionNumber === 1 ? "submitted" : "resubmitted",
+    actor,
+    statusBefore,
+    statusAfter: "submitted",
+    daysAfter: week.selectedDates,
+  });
 
   await logAudit({
     action: "week_submitted",
     entityType: "weekly_plan",
     entityId: week.plan.id,
-    newValue: { status: "submitted", selectedDates: week.selectedDates },
+    newValue: { status: "submitted", selectedDates: week.selectedDates, versionNumber, submittedBy: actor.id },
   });
 
-  if (profile.role === "du_head") {
+  if (target.role === "du_head") {
     const { data: setting } = await supabase.from("app_settings").select("value").eq("key", "du_head_auto_validate").maybeSingle();
     if (setting?.value === true) {
+      await supabase.from("weekly_plans").update({ status: "validated", decided_at: new Date().toISOString() }).eq("id", week.plan.id);
       await supabase
-        .from("weekly_plans")
-        .update({ status: "validated", decided_at: new Date().toISOString() })
-        .eq("id", week.plan.id);
+        .from("weekly_plan_versions")
+        .update({ decision: "validated", decided_at: new Date().toISOString(), comment: "Validation automatique (Responsable DU)." })
+        .eq("weekly_plan_id", week.plan.id)
+        .eq("version_number", versionNumber);
+      await logPlanEvent(supabase, {
+        weeklyPlanId: week.plan.id,
+        versionNumber,
+        eventType: "validated",
+        actor: target,
+        statusBefore: "submitted",
+        statusAfter: "validated",
+        daysAfter: week.selectedDates,
+        comment: "Validation automatique (Responsable DU).",
+      });
       await logAudit({ action: "week_validated", entityType: "weekly_plan", entityId: week.plan.id, newValue: { status: "validated", auto: true } });
     } else {
       const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin").eq("status", "active");
@@ -125,7 +238,7 @@ export async function submitWeek(weekStart: string): Promise<ActionResult> {
         await notify(supabase, {
           recipientId: admin.id,
           type: "week_to_validate",
-          title: `${profile.first_name} ${profile.last_name} (Responsable DU) a soumis sa semaine`,
+          title: `${target.first_name} ${target.last_name} (Responsable DU) a soumis sa semaine`,
           body: `Semaine du ${weekStart} en attente de validation.`,
           relatedEntityType: "weekly_plan",
           relatedEntityId: week.plan.id,
@@ -133,12 +246,14 @@ export async function submitWeek(weekStart: string): Promise<ActionResult> {
       }
     }
   } else {
-    const validatorId = await getDirectValidatorId(supabase, profile);
+    const validatorId = await getDirectValidatorId(supabase, target);
     if (validatorId) {
       await notify(supabase, {
         recipientId: validatorId,
         type: "week_to_validate",
-        title: `${profile.first_name} ${profile.last_name} a soumis sa semaine`,
+        title: isActingOnBehalf
+          ? `${actor.first_name} ${actor.last_name} a soumis la semaine de ${target.first_name} ${target.last_name}`
+          : `${target.first_name} ${target.last_name} a soumis sa semaine`,
         body: `Semaine du ${weekStart} en attente de validation.`,
         relatedEntityType: "weekly_plan",
         relatedEntityId: week.plan.id,
@@ -146,76 +261,133 @@ export async function submitWeek(weekStart: string): Promise<ActionResult> {
     }
   }
 
-  revalidatePath("/employee/agenda");
-  revalidatePath("/employee/weeks");
-  revalidateValidationViews();
+  revalidateWeekViews();
   return { ok: true };
 }
 
 /**
  * Le collaborateur rappelle sa propre semaine tant qu'elle est seulement
  * "soumise" (en attente de décision) : contrairement à la réouverture d'une
- * semaine déjà validée, aucune approbation du validateur n'est nécessaire
- * ici puisque rien n'a encore été décidé — la semaine repasse simplement en
- * brouillon, modifiable.
+ * semaine déjà validée, aucune approbation du validateur n'est nécessaire —
+ * la semaine repasse en brouillon, modifiable, sélection conservée.
+ * Transition vérifiée de façon atomique (UPDATE ... WHERE status =
+ * 'submitted') pour trancher proprement une course avec une décision
+ * manager simultanée : une seule des deux opérations peut réussir.
  */
 export async function recallWeek(planId: string): Promise<ActionResult> {
   const { profile } = await requireUser();
   const supabase = await createClient();
 
-  const { data: plan } = await supabase.from("weekly_plans").select("*").eq("id", planId).single();
-  if (!plan || plan.employee_id !== profile.id) return { ok: false, error: "Semaine introuvable." };
-  if (plan.status !== "submitted") return { ok: false, error: "Seule une semaine en attente de validation peut être rappelée." };
+  const { data: before } = await supabase.from("weekly_plans").select("*").eq("id", planId).maybeSingle();
+  if (!before || before.employee_id !== profile.id) return { ok: false, error: "Semaine introuvable." };
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("weekly_plans")
     .update({ status: "draft", submitted_at: null })
-    .eq("id", planId);
+    .eq("id", planId)
+    .eq("status", "submitted")
+    .select("*")
+    .maybeSingle();
+
   if (error) return { ok: false, error: "Rappel impossible." };
 
+  if (!updated) {
+    const { data: current } = await supabase.from("weekly_plans").select("status").eq("id", planId).maybeSingle();
+    if (current?.status === "draft") return { ok: false, error: "Cette semaine est déjà en brouillon." };
+    if (current?.status === "needs_changes" || current?.status === "validated") {
+      return { ok: false, error: "Cette semaine vient d'être traitée par votre manager. Actualisation du statut..." };
+    }
+    return { ok: false, error: "Rappel impossible." };
+  }
+
+  const dates = await currentSelectedDates(supabase, planId);
+  await logPlanEvent(supabase, {
+    weeklyPlanId: planId,
+    eventType: "recalled",
+    actor: profile,
+    statusBefore: "submitted",
+    statusAfter: "draft",
+    daysBefore: dates,
+    daysAfter: dates,
+  });
   await logAudit({ action: "week_recalled", entityType: "weekly_plan", entityId: planId, oldValue: { status: "submitted" }, newValue: { status: "draft" } });
 
-  revalidatePath("/employee/agenda");
-  revalidatePath("/employee/weeks");
-  revalidateValidationViews();
+  revalidateWeekViews();
   return { ok: true };
 }
 
-async function decideWeek(
-  planId: string,
-  newStatus: "validated" | "rejected" | "needs_changes",
-  comment: string | null
-): Promise<ActionResult> {
+/**
+ * Décision du validateur sur une semaine soumise. "rejected" et
+ * "changes_requested" (Refuser / Demander modification) produisent le même
+ * état vivant "À modifier" — le collaborateur récupère la main dans les
+ * deux cas (section 13) — seule la nature exacte de la décision diffère,
+ * conservée sur la version pour l'historique ("Version 1 -> Refusée").
+ * Transition atomique, même principe que `recallWeek`.
+ */
+async function decideWeek(planId: string, decision: WeeklyPlanVersionDecisionCode, comment: string | null): Promise<ActionResult> {
   const { profile: validator } = await requireUser();
   const supabase = await createClient();
+  const nextStatus: PlanStatus = decision === "validated" ? "validated" : "needs_changes";
 
-  const { data: plan } = await supabase.from("weekly_plans").select("*").eq("id", planId).single();
-  if (!plan) return { ok: false, error: "Semaine introuvable." };
-  if (plan.status !== "submitted") return { ok: false, error: "Cette semaine n'est pas en attente de validation." };
-
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("weekly_plans")
-    .update({
-      status: newStatus,
-      decided_at: new Date().toISOString(),
-      decided_by: validator.id,
-      manager_comment: comment,
-    })
-    .eq("id", planId);
+    .update({ status: nextStatus, decided_at: new Date().toISOString(), decided_by: validator.id, manager_comment: comment })
+    .eq("id", planId)
+    .eq("status", "submitted")
+    .select("*")
+    .maybeSingle();
+
   if (error) return { ok: false, error: "Action impossible : cette semaine n'est pas dans votre périmètre de validation." };
 
+  if (!updated) {
+    const { data: current } = await supabase.from("weekly_plans").select("status").eq("id", planId).maybeSingle();
+    if (current?.status === "draft") return { ok: false, error: "Le collaborateur vient de rappeler cette demande. Actualisation du statut..." };
+    if (current?.status === "validated" || current?.status === "needs_changes") {
+      return { ok: false, error: "Cette semaine vient d'être traitée. Actualisation du statut..." };
+    }
+    return { ok: false, error: "Cette semaine n'est pas en attente de validation." };
+  }
+
+  const { data: latestVersion } = await supabase
+    .from("weekly_plan_versions")
+    .select("id, version_number")
+    .eq("weekly_plan_id", planId)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestVersion) {
+    await supabase
+      .from("weekly_plan_versions")
+      .update({ decision, decided_at: new Date().toISOString(), decided_by: validator.id, comment })
+      .eq("id", latestVersion.id);
+  }
+
+  const dates = await currentSelectedDates(supabase, planId);
+  await logPlanEvent(supabase, {
+    weeklyPlanId: planId,
+    versionNumber: latestVersion?.version_number ?? null,
+    eventType: decision === "validated" ? "validated" : decision === "rejected" ? "rejected" : "changes_requested",
+    actor: validator,
+    statusBefore: "submitted",
+    statusAfter: nextStatus,
+    daysBefore: dates,
+    daysAfter: dates,
+    comment,
+  });
+
   await logAudit({
-    action: `week_${newStatus}`,
+    action: `week_${decision}`,
     entityType: "weekly_plan",
     entityId: planId,
     oldValue: { status: "submitted" },
-    newValue: { status: newStatus, comment },
+    newValue: { status: nextStatus, comment },
   });
 
-  const label = newStatus === "validated" ? "validée" : newStatus === "rejected" ? "refusée" : "à modifier";
+  const label = decision === "validated" ? "validée" : "renvoyée pour modification";
   await notify(supabase, {
-    recipientId: plan.employee_id,
-    type: `week_${newStatus}`,
+    recipientId: updated.employee_id,
+    type: decision === "validated" ? "week_validated" : "week_needs_changes",
     title: `Votre semaine a été ${label}`,
     body: comment ?? undefined,
     relatedEntityType: "weekly_plan",
@@ -223,6 +395,7 @@ async function decideWeek(
   });
 
   revalidateValidationViews();
+  revalidatePath("/employee/agenda");
   return { ok: true };
 }
 
@@ -235,7 +408,7 @@ export async function rejectWeek(planId: string, comment?: string): Promise<Acti
 }
 
 export async function requestWeekChanges(planId: string, comment?: string): Promise<ActionResult> {
-  return decideWeek(planId, "needs_changes", comment ?? null);
+  return decideWeek(planId, "changes_requested", comment ?? null);
 }
 
 export async function validateWeeksInBulk(planIds: string[]): Promise<ActionResult> {
@@ -268,6 +441,7 @@ export async function requestWeekReopen(planId: string): Promise<ActionResult> {
     relatedEntityId: planId,
   });
 
+  await logPlanEvent(supabase, { weeklyPlanId: planId, eventType: "reopen_requested", actor: profile, statusBefore: "validated", statusAfter: "validated" });
   await logAudit({ action: "week_reopen_requested", entityType: "weekly_plan", entityId: planId });
   return { ok: true };
 }
@@ -277,13 +451,7 @@ export async function approveWeekReopen(planId: string, comment?: string): Promi
   const { profile: validator } = await requireUser();
   const supabase = await createClient();
 
-  const { data: plan } = await supabase.from("weekly_plans").select("*").eq("id", planId).single();
-  if (!plan) return { ok: false, error: "Semaine introuvable." };
-  if (plan.status !== "validated") return { ok: false, error: "Cette semaine n'est pas validée." };
-
-  const { data: previousDays } = await supabase.from("telework_days").select("work_date").eq("weekly_plan_id", planId);
-
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("weekly_plans")
     .update({
       status: "needs_changes",
@@ -291,22 +459,37 @@ export async function approveWeekReopen(planId: string, comment?: string): Promi
       decided_by: validator.id,
       manager_comment: comment ?? "Réouverture acceptée.",
     })
-    .eq("id", planId);
+    .eq("id", planId)
+    .eq("status", "validated")
+    .select("*")
+    .maybeSingle();
   if (error) return { ok: false, error: "Action impossible : cette semaine n'est pas dans votre périmètre." };
+  if (!updated) return { ok: false, error: "Cette semaine n'est plus validée." };
 
+  const dates = await currentSelectedDates(supabase, planId);
+  await logPlanEvent(supabase, {
+    weeklyPlanId: planId,
+    eventType: "reopen_approved",
+    actor: validator,
+    statusBefore: "validated",
+    statusAfter: "needs_changes",
+    daysBefore: dates,
+    daysAfter: dates,
+    comment: comment ?? "Réouverture acceptée.",
+  });
   await logAudit({
     action: "week_reopen_approved",
     entityType: "weekly_plan",
     entityId: planId,
-    oldValue: { status: "validated", days: previousDays },
+    oldValue: { status: "validated" },
     newValue: { status: "needs_changes" },
   });
 
   await notify(supabase, {
-    recipientId: plan.employee_id,
+    recipientId: updated.employee_id,
     type: "week_needs_changes",
     title: "Votre demande de modification a été acceptée",
-    body: `Vous pouvez à nouveau modifier la semaine du ${plan.week_start}.`,
+    body: `Vous pouvez à nouveau modifier la semaine du ${updated.week_start}.`,
     relatedEntityType: "weekly_plan",
     relatedEntityId: planId,
   });

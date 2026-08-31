@@ -62,9 +62,17 @@ export default async function DuOverviewPage({ searchParams }: { searchParams: P
                       <p className="text-xs text-slate-400">{squadLead ? `${squadLead.first_name} ${squadLead.last_name} — Squad Lead` : "Aucun Squad Lead"}</p>
                     </div>
                     <div className="divide-y divide-slate-100">
-                      {squadLead && <MemberRow name={`${squadLead.first_name} ${squadLead.last_name}`} sub="Squad Lead" week={weekByMember.get(squadLead.id)} />}
+                      {squadLead && (
+                        <MemberRow employeeId={squadLead.id} name={`${squadLead.first_name} ${squadLead.last_name}`} sub="Squad Lead" week={weekByMember.get(squadLead.id)} />
+                      )}
                       {squadMembers.map((m) => (
-                        <MemberRow key={m.id} name={`${m.first_name} ${m.last_name}`} sub={m.employee_type === "internal" ? "Interne" : "Externe"} week={weekByMember.get(m.id)} />
+                        <MemberRow
+                          key={m.id}
+                          employeeId={m.id}
+                          name={`${m.first_name} ${m.last_name}`}
+                          sub={m.employee_type === "internal" ? "Interne" : "Externe"}
+                          week={weekByMember.get(m.id)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -81,10 +89,12 @@ export default async function DuOverviewPage({ searchParams }: { searchParams: P
 }
 
 function MemberRow({
+  employeeId,
   name,
   sub,
   week,
 }: {
+  employeeId: string;
   name: string;
   sub: string;
   week?: { planId: string | null; status: PlanStatus | "not_submitted"; days: { date: string; icon: string; label: string }[] };
@@ -111,6 +121,9 @@ function MemberRow({
           )
         ) : null}
         {week?.status === "submitted" && week.planId && <QuickDecisionButton planId={week.planId} />}
+        <Link href={`/team/${employeeId}/agenda`} className="btn-secondary px-3 py-1.5 text-xs">
+          Modifier
+        </Link>
       </div>
     </div>
   );

@@ -51,10 +51,16 @@ export default async function TribeOverviewPage({ searchParams }: { searchParams
             </div>
             <div className="divide-y divide-slate-100">
               {lead && (
-                <MemberRow name={`${lead.first_name} ${lead.last_name}`} sub="Squad Lead" week={weekByMember.get(lead.id)} />
+                <MemberRow employeeId={lead.id} name={`${lead.first_name} ${lead.last_name}`} sub="Squad Lead" week={weekByMember.get(lead.id)} />
               )}
               {squadMembers.map((m) => (
-                <MemberRow key={m.id} name={`${m.first_name} ${m.last_name}`} sub={m.employee_type === "internal" ? "Interne" : "Externe"} week={weekByMember.get(m.id)} />
+                <MemberRow
+                  key={m.id}
+                  employeeId={m.id}
+                  name={`${m.first_name} ${m.last_name}`}
+                  sub={m.employee_type === "internal" ? "Interne" : "Externe"}
+                  week={weekByMember.get(m.id)}
+                />
               ))}
               {squadMembers.length === 0 && !lead && <p className="px-5 py-4 text-sm text-slate-400">Aucun membre.</p>}
             </div>
@@ -67,10 +73,12 @@ export default async function TribeOverviewPage({ searchParams }: { searchParams
 }
 
 function MemberRow({
+  employeeId,
   name,
   sub,
   week,
 }: {
+  employeeId: string;
   name: string;
   sub: string;
   week?: { planId: string | null; status: PlanStatus | "not_submitted"; days: { date: string; icon: string; label: string }[] };
@@ -97,6 +105,9 @@ function MemberRow({
           )
         ) : null}
         {week?.status === "submitted" && week.planId && <QuickDecisionButton planId={week.planId} />}
+        <Link href={`/team/${employeeId}/agenda`} className="btn-secondary px-3 py-1.5 text-xs">
+          Modifier
+        </Link>
       </div>
     </div>
   );

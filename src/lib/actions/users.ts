@@ -354,7 +354,10 @@ export async function resetUserPassword(userId: string): Promise<CreateUserResul
   const { error } = await admin.auth.admin.updateUserById(userId, { password: tempPassword });
   if (error) return { ok: false, error: "Réinitialisation impossible." };
 
-  await admin.from("profiles").update({ must_change_password: true }).eq("id", userId);
+  // Écrit via la session de l'acteur (pas le client admin/service-role) : le
+  // trigger profiles_guard vérifie auth.uid(), qui est nul côté service-role
+  // et rejetterait silencieusement cette mise à jour.
+  await supabase.from("profiles").update({ must_change_password: true }).eq("id", userId);
   await logAudit({ action: "password_reset", entityType: "profile", entityId: userId });
 
   revalidateHierarchyViews();

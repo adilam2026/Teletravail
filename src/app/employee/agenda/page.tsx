@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loadEmployeeWeek } from "@/lib/data/planning";
 import { addWeeks, currentWeekStart, mondayOf } from "@/lib/date/casablanca";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
+import { WeekHistoryButton } from "@/components/calendar/WeekHistoryButton";
 import { ReopenWeekButton } from "@/components/employee/ReopenWeekButton";
 
 export default async function AgendaPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
@@ -34,6 +35,7 @@ export default async function AgendaPage({ searchParams }: { searchParams: Promi
           <Link href="/employee/agenda/month" className="btn-secondary">
             Vue mois
           </Link>
+          <WeekHistoryButton planId={week.plan.id} />
         </div>
       </div>
 
@@ -46,10 +48,15 @@ export default async function AgendaPage({ searchParams }: { searchParams: Promi
         planStatus={week.plan.status}
       />
 
-      {week.plan.manager_comment && (week.plan.status === "rejected" || week.plan.status === "needs_changes") && (
+      {week.plan.status === "needs_changes" && (
         <div className="card border-amber-200 bg-amber-50">
-          <p className="text-sm font-semibold text-amber-800">Commentaire du manager</p>
-          <p className="mt-1 text-sm text-amber-700">{week.plan.manager_comment}</p>
+          <p className="text-sm font-semibold text-amber-800">Modification demandée</p>
+          <p className="mt-1 text-sm text-amber-700">
+            Votre manager a renvoyé cette semaine pour correction. Vous pouvez modifier vos jours puis la soumettre à nouveau.
+          </p>
+          {week.plan.manager_comment && (
+            <p className="mt-2 rounded-lg bg-white px-3 py-2 text-sm text-amber-900">« {week.plan.manager_comment} »</p>
+          )}
         </div>
       )}
 

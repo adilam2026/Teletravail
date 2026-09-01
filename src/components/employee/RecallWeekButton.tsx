@@ -6,7 +6,16 @@ import { recallWeek } from "@/lib/actions/weeks";
 import { confirmDialog } from "@/lib/confirm";
 import { toast } from "@/lib/toast";
 
-export function RecallWeekButton({ planId, onSuccess }: { planId: string; onSuccess?: () => void }) {
+export function RecallWeekButton({
+  planId,
+  onOptimistic,
+  onSuccess,
+}: {
+  planId: string;
+  /** Appelé juste après confirmation, avant la réponse serveur — UI optimiste (section 13). */
+  onOptimistic?: () => void;
+  onSuccess?: () => void;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -17,6 +26,8 @@ export function RecallWeekButton({ planId, onSuccess }: { planId: string; onSucc
       cancelLabel: "Annuler",
     });
     if (!confirmed) return;
+
+    onOptimistic?.();
 
     startTransition(() => {
       recallWeek(planId).then((result) => {
@@ -30,7 +41,7 @@ export function RecallWeekButton({ planId, onSuccess }: { planId: string; onSucc
         }
         toast("Semaine rappelée : vous pouvez la modifier.", "success");
         if (onSuccess) onSuccess();
-        else router.refresh();
+        else if (!onOptimistic) router.refresh();
       });
     });
   }

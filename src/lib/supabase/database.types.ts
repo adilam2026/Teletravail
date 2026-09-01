@@ -438,6 +438,18 @@ export type Database = {
         };
         Returns: string;
       };
+      submit_week: {
+        Args: { p_plan_id: string; p_selected_dates: string[] };
+        Returns: WeeklyPlanRow | null;
+      };
+      recall_week: {
+        Args: { p_plan_id: string };
+        Returns: WeeklyPlanRow | null;
+      };
+      decide_week: {
+        Args: { p_plan_id: string; p_decision: WeeklyPlanVersionDecisionCode; p_comment: string | null };
+        Returns: WeeklyPlanRow | null;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };

@@ -11,6 +11,7 @@ import { RecallWeekButton } from "@/components/employee/RecallWeekButton";
 import { ReopenWeekButton } from "@/components/employee/ReopenWeekButton";
 import { WeekHistoryButton } from "@/components/calendar/WeekHistoryButton";
 import { useWeekEditor } from "@/components/calendar/useWeekEditor";
+import { toast as showToast } from "@/lib/toast";
 
 const EDITABLE_STATUSES: PlanStatus[] = ["draft", "needs_changes"];
 
@@ -143,7 +144,11 @@ export function MonthWeekCard({
             targetEmployeeId={targetEmployeeId}
             label="Soumettre ma demande"
             pendingLabel="Envoi..."
-            onSuccess={() => setStatus("submitted")}
+            onOptimistic={() => setStatus("submitted")}
+            onError={(message) => {
+              setStatus("draft");
+              showToast(message, "error");
+            }}
           />
         )}
 
@@ -154,7 +159,11 @@ export function MonthWeekCard({
             targetEmployeeId={targetEmployeeId}
             label="Modifier puis resoumettre"
             pendingLabel="Envoi..."
-            onSuccess={() => setStatus("submitted")}
+            onOptimistic={() => setStatus("submitted")}
+            onError={(message) => {
+              setStatus("needs_changes");
+              showToast(message, "error");
+            }}
           />
         )}
 
@@ -162,7 +171,9 @@ export function MonthWeekCard({
             badge d'en-tête (section 5) : pas de répétition ici, seulement l'action disponible.
             Rappeler et demander une réouverture restent des privilèges du collaborateur
             lui-même — jamais affichés quand un supérieur agit pour son compte. */}
-        {status === "submitted" && !targetEmployeeId && <RecallWeekButton planId={planId} onSuccess={() => setStatus("draft")} />}
+        {status === "submitted" && !targetEmployeeId && (
+          <RecallWeekButton planId={planId} onOptimistic={() => setStatus("draft")} />
+        )}
 
         {status === "validated" && !targetEmployeeId && <ReopenWeekButton planId={planId} />}
       </div>

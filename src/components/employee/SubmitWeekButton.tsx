@@ -10,6 +10,8 @@ export function SubmitWeekButton({
   targetEmployeeId,
   label = "Soumettre ma semaine",
   pendingLabel = "Envoi...",
+  onOptimistic,
+  onError,
   onSuccess,
 }: {
   weekStart: string;
@@ -17,7 +19,18 @@ export function SubmitWeekButton({
   targetEmployeeId?: string;
   label?: string;
   pendingLabel?: string;
-  /** Si fourni, appelé à la place de router.refresh() — évite de recharger toute la page (ex. une carte semaine dans la vue mensuelle, section 21 du cahier des charges). */
+  /**
+   * Appelé de façon synchrone au clic, avant même la réponse serveur — UI
+   * vraiment optimiste (section 11-12 du cahier des charges perf) : le
+   * statut change à l'écran dans la même fraction de seconde, pas après un
+   * aller-retour réseau. Ce composant disparaît généralement de l'arbre
+   * juste après (le parent bascule sur un autre statut), donc son propre
+   * indicateur "pending" local n'a plus le temps de s'afficher — normal.
+   */
+  onOptimistic?: () => void;
+  /** Appelé si la mutation échoue, pour annuler ce que `onOptimistic` avait affiché. */
+  onError?: (message: string) => void;
+  /** Si fourni (et sans `onOptimistic`), appelé à la place de router.refresh(). */
   onSuccess?: () => void;
 }) {
   const router = useRouter();
@@ -26,14 +39,17 @@ export function SubmitWeekButton({
 
   function handleSubmit() {
     setError(null);
+    onOptimistic?.();
     startTransition(async () => {
       const result = await submitWeek(weekStart, targetEmployeeId);
       if (!result.ok) {
-        setError(result.error ?? "Impossible de soumettre la semaine.");
+        const message = result.error ?? "Impossible de soumettre la semaine.";
+        if (onError) onError(message);
+        else setError(message);
         return;
       }
       if (onSuccess) onSuccess();
-      else router.refresh();
+      else if (!onOptimistic) router.refresh();
     });
   }
 

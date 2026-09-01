@@ -7,6 +7,14 @@ export interface AuditEntry {
   entityId?: string | null;
   oldValue?: unknown;
   newValue?: unknown;
+  /**
+   * Id de l'acteur, quand l'appelant l'a déjà sous la main (issu de
+   * `requireUser()` un peu plus haut) : évite un `getUser()` réseau
+   * redondant rien que pour journaliser (section 29 du cahier des charges
+   * perf — chaque appel sans cet id coûtait un aller-retour Auth caché).
+   * Sinon, retombe sur `getUser()` comme avant.
+   */
+  actorId?: string;
 }
 
 /**
@@ -17,13 +25,18 @@ export interface AuditEntry {
  */
 export async function logAudit(entry: AuditEntry): Promise<void> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return;
+
+  let actorId = entry.actorId;
+  if (!actorId) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    actorId = user.id;
+  }
 
   await supabase.from("audit_logs").insert({
-    actor_id: user.id,
+    actor_id: actorId,
     action: entry.action,
     entity_type: entry.entityType,
     entity_id: entry.entityId ?? null,

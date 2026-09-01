@@ -21,8 +21,10 @@ export default function LoginPage() {
         setError(result.error ?? "Identifiant ou mot de passe incorrect.");
         return;
       }
-      router.replace("/");
-      router.refresh();
+      // Destination déjà résolue par le serveur : un seul saut de route, pas
+      // de détour par "/" qui relirait le profil pour rediriger une seconde
+      // fois (section 6 du cahier des charges perf).
+      router.replace(result.redirectTo ?? "/");
     } finally {
       setLoading(false);
     }

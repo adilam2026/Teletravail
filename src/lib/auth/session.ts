@@ -1,6 +1,9 @@
 import "server-only";
+import { cache } from "react";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { perfTime } from "@/lib/perf";
 import type { AppRole, ProfileRow } from "@/lib/supabase/database.types";
 
 export interface CurrentUser {
@@ -8,19 +11,40 @@ export interface CurrentUser {
   profile: ProfileRow;
 }
 
-/** Utilisateur connecté + son profil métier, ou `null` si non authentifié. */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+/**
+ * Utilisateur connecté + son profil métier, ou `null` si non authentifié.
+ *
+ * Deux optimisations (section 6/28/29 du cahier des charges perf) :
+ * - `cache()` de React dédoublonne les appels au sein d'une même requête —
+ *   layout ET page appellent chacun `requireUser()`, ça ne doit coûter
+ *   qu'un seul aller-retour, pas deux ou trois.
+ * - Le middleware a déjà revalidé le JWT auprès de Supabase Auth (appel
+ *   réseau) et transmet l'id vérifié en en-tête ; on l'utilise directement
+ *   au lieu de rappeler `getUser()` (encore un aller-retour réseau évité).
+ *   Route non couverte par le middleware (cas limite) → on retombe sur
+ *   `getUser()`.
+ */
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+  return perfTime("auth: getCurrentUser (requête réelle, dédupliquée par requête via React.cache)", async () => {
+    const supabase = await createClient();
 
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-  if (!profile) return null;
+    const headerList = await headers();
+    let authId = headerList.get("x-verified-user-id");
 
-  return { authId: user.id, profile };
-}
+    if (!authId) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      authId = user?.id ?? null;
+    }
+    if (!authId) return null;
+
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", authId).single();
+    if (!profile) return null;
+
+    return { authId, profile };
+  });
+});
 
 /** À utiliser en haut d'une page/layout : redirige vers /login si non connecté. */
 export async function requireUser(): Promise<CurrentUser> {

@@ -12,6 +12,7 @@ import type { WeekEvaluationInput, WeekEvaluationResult } from "@/lib/rules-engi
 import type { ProfileRow, WeeklyPlanRow } from "@/lib/supabase/database.types";
 import type { AppSupabaseClient as DB } from "@/lib/supabase/server";
 import { addWeeks, monthWeeksOwned, nowIso } from "@/lib/date/casablanca";
+import { perfTime } from "@/lib/perf";
 
 const BRIDGE_BUFFER_DAYS = 14;
 
@@ -20,18 +21,28 @@ export async function getRuleSettings(supabase: DB): Promise<RuleSettings> {
   return parseRuleSettings((data ?? []) as { key: string; value: unknown }[]);
 }
 
-export async function getResolvedQuota(supabase: DB, profile: ProfileRow, settings: RuleSettings): Promise<number> {
+/**
+ * Requête seule (sans l'arithmétique de résolution), pour pouvoir la lancer
+ * en parallèle des autres requêtes indépendantes d'une semaine/d'un mois —
+ * elle ne dépend d'aucune d'entre elles, inutile de l'attendre à part
+ * (section 7 du cahier des charges perf : paralléliser après login/chargement).
+ */
+export async function getQuotaOverride(supabase: DB, employeeId: string): Promise<number | null> {
   const { data } = await supabase
     .from("rule_overrides")
     .select("weekly_quota")
-    .eq("employee_id", profile.id)
+    .eq("employee_id", employeeId)
     .eq("active", true)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  return data?.weekly_quota ?? null;
+}
 
+export async function getResolvedQuota(supabase: DB, profile: ProfileRow, settings: RuleSettings): Promise<number> {
+  const override = await getQuotaOverride(supabase, profile.id);
   const employeeType = profile.employee_type ?? "internal";
-  return resolveWeeklyQuota(employeeType, settings, data?.weekly_quota ?? null);
+  return resolveWeeklyQuota(employeeType, settings, override);
 }
 
 export async function getHolidaysInRange(supabase: DB, start: string, end: string): Promise<HolidayDate[]> {
@@ -181,13 +192,26 @@ export async function getOrCreateWeeklyPlan(
     .maybeSingle();
   if (existing) return existing;
 
+  // Deux requêtes concurrentes pour le même employé+semaine (ex. le
+  // préchargement Next.js d'un lien de la sidebar qui arrive en même temps
+  // que la navigation réelle) peuvent toutes les deux constater "aucune
+  // ligne" et tenter de la créer : la seconde violerait la contrainte
+  // unique (employee_id, week_start). `ignoreDuplicates` absorbe cette
+  // course proprement au lieu de faire planter la page.
   const { data: created, error } = await supabase
     .from("weekly_plans")
-    .insert({ employee_id: employeeId, week_start: weekStart, status: "draft" })
+    .upsert({ employee_id: employeeId, week_start: weekStart, status: "draft" }, { onConflict: "employee_id,week_start", ignoreDuplicates: true })
+    .select("*");
+  if (created && created[0]) return created[0];
+
+  const { data: afterRace, error: refetchError } = await supabase
+    .from("weekly_plans")
     .select("*")
-    .single();
-  if (error || !created) throw new Error(error?.message ?? "Impossible de créer la semaine");
-  return created;
+    .eq("employee_id", employeeId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  if (afterRace) return afterRace;
+  throw new Error((error ?? refetchError)?.message ?? "Impossible de créer la semaine");
 }
 
 export type DayBadgeKind = "holiday_national" | "holiday_religious" | "absence_leave" | "absence_sick" | "absence_other" | "exception";
@@ -257,23 +281,24 @@ export async function loadEmployeeWeek(
   const rangeStart = addDaysStr(weekStart, -BRIDGE_BUFFER_DAYS);
   const rangeEnd = addDaysStr(weekStart, 4 + BRIDGE_BUFFER_DAYS);
 
-  const [settings, plan, holidays, absences, exceptions, adjacentSelections] = await Promise.all([
+  const [settings, plan, holidays, absences, exceptions, adjacentSelections, quotaOverride] = await Promise.all([
     getRuleSettings(supabase),
     getOrCreateWeeklyPlan(supabase, profile.id, weekStart),
     getHolidaysInRange(supabase, rangeStart, rangeEnd),
     getAbsencesForEmployee(supabase, profile.id, rangeStart, rangeEnd),
     getExceptionsFor(supabase, [profile.id], profile.squad_id ? [profile.squad_id] : [], weekStart, addDaysStr(weekStart, 4)),
     getAdjacentBridgeSelections(supabase, profile.id, weekStart),
+    getQuotaOverride(supabase, profile.id),
   ]);
+  const quota = resolveWeeklyQuota(profile.employee_type ?? "internal", settings, quotaOverride);
 
-  const quota = await getResolvedQuota(supabase, profile, settings);
-
-  const { data: days } = await supabase.from("telework_days").select("work_date").eq("weekly_plan_id", plan.id);
+  // Ces deux requêtes dépendent de `plan.id` (créé ci-dessus si besoin) mais
+  // pas l'une de l'autre : parallélisées plutôt qu'enchaînées.
+  const [{ data: days }, priorWeeksSelections] = await Promise.all([
+    supabase.from("telework_days").select("work_date").eq("weekly_plan_id", plan.id),
+    settings.rotationEnabled ? getPriorWeeksSelections(supabase, profile.id, weekStart, settings.rotationWeeks) : Promise.resolve([]),
+  ]);
   const selectedDates = (days ?? []).map((d) => d.work_date);
-
-  const priorWeeksSelections = settings.rotationEnabled
-    ? await getPriorWeeksSelections(supabase, profile.id, weekStart, settings.rotationWeeks)
-    : [];
 
   const evaluationInput: WeekEvaluationInput = {
     weekStart,
@@ -321,11 +346,15 @@ export interface EmployeeMonthContext {
  * vendredi/lundi) et ne sont jamais créées si elles n'existaient pas déjà.
  */
 export async function loadEmployeeMonth(supabase: DB, profile: ProfileRow, month: string): Promise<EmployeeMonthContext> {
+  return perfTime(`loadEmployeeMonth ${month}`, () => loadEmployeeMonthInner(supabase, profile, month));
+}
+
+async function loadEmployeeMonthInner(supabase: DB, profile: ProfileRow, month: string): Promise<EmployeeMonthContext> {
   const weekStarts = monthWeeksOwned(month);
   if (weekStarts.length === 0) return { month, weeks: [] };
 
-  const settings = await getRuleSettings(supabase);
-  const quota = await getResolvedQuota(supabase, profile, settings);
+  const [settings, quotaOverride] = await Promise.all([getRuleSettings(supabase), getQuotaOverride(supabase, profile.id)]);
+  const quota = resolveWeeklyQuota(profile.employee_type ?? "internal", settings, quotaOverride);
 
   const bufferWeeksBefore = Math.max(settings.rotationEnabled ? settings.rotationWeeks : 0, 2);
   const bufferWeeksAfter = 2;
@@ -353,12 +382,32 @@ export async function loadEmployeeMonth(supabase: DB, profile: ProfileRow, month
 
   const missingTargetWeeks = weekStarts.filter((w) => !planByWeek.has(w));
   if (missingTargetWeeks.length > 0) {
+    // `ignoreDuplicates` : deux requêtes concurrentes pour le même mois (ex.
+    // préchargement de la sidebar + navigation réelle) peuvent constater les
+    // mêmes semaines manquantes et tenter de les créer toutes les deux — la
+    // seconde violerait sinon la contrainte unique (employee_id, week_start)
+    // et ferait planter la page (observé en test).
     const { data: created, error } = await supabase
       .from("weekly_plans")
-      .insert(missingTargetWeeks.map((week_start) => ({ employee_id: profile.id, week_start, status: "draft" as const })))
+      .upsert(
+        missingTargetWeeks.map((week_start) => ({ employee_id: profile.id, week_start, status: "draft" as const })),
+        { onConflict: "employee_id,week_start", ignoreDuplicates: true }
+      )
       .select("*");
     if (error) throw new Error(error.message);
     for (const p of created ?? []) planByWeek.set(p.week_start, p);
+
+    // Les lignes "ignorées" (créées entre-temps par la requête concurrente)
+    // ne reviennent pas dans `created` : on relit seulement ce qui manque encore.
+    const stillMissing = missingTargetWeeks.filter((w) => !planByWeek.has(w));
+    if (stillMissing.length > 0) {
+      const { data: afterRace } = await supabase
+        .from("weekly_plans")
+        .select("*")
+        .eq("employee_id", profile.id)
+        .in("week_start", stillMissing);
+      for (const p of afterRace ?? []) planByWeek.set(p.week_start, p);
+    }
   }
 
   const planIds = [...planByWeek.values()].map((p) => p.id);

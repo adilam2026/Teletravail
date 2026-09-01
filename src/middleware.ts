@@ -56,6 +56,19 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  if (user) {
+    // Le JWT vient d'être revalidé auprès de Supabase Auth (réseau) par
+    // getUser() ci-dessus : plutôt que de refaire cette même vérification
+    // réseau dans chaque layout/page via requireUser(), on transmet l'id
+    // déjà vérifié en en-tête. Un en-tête client portant le même nom est
+    // toujours écrasé ici — jamais fait confiance à une valeur entrante.
+    const forwardedHeaders = new Headers(request.headers);
+    forwardedHeaders.set("x-verified-user-id", user.id);
+    const forwarded = NextResponse.next({ request: { headers: forwardedHeaders } });
+    response.cookies.getAll().forEach((cookie) => forwarded.cookies.set(cookie));
+    response = forwarded;
+  }
+
   return response;
 }
 

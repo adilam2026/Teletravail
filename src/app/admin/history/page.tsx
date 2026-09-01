@@ -10,6 +10,7 @@ const ACTION_LABELS: Record<string, string> = {
   week_reopen_approved: "Réouverture acceptée",
   user_created: "Compte créé",
   user_updated: "Compte modifié",
+  squad_changed: "Rattachement (Squad) modifié",
   user_deactivated: "Compte désactivé",
   user_reactivated: "Compte réactivé",
   password_reset: "Mot de passe réinitialisé",

@@ -267,7 +267,43 @@ export async function updateUser(input: UpdateUserInput): Promise<CreateUserResu
   if (actor.role === "admin" && input.role !== undefined) patch.role = input.role;
 
   const squadChanged = input.squadId !== undefined && input.squadId !== before.squad_id;
-  if (squadChanged) patch.squad_id = input.squadId;
+  if (squadChanged) {
+    // La RLS (is_superior_of) garantit déjà que l'acteur a autorité sur LE
+    // COLLABORATEUR CIBLE ; il reste à vérifier qu'il a aussi autorité sur
+    // la SQUAD DE DESTINATION — sinon un Squad/Tribe/DU Lead pourrait
+    // réaffecter quelqu'un vers une Squad totalement hors de son périmètre
+    // (section 2 du cahier des charges : jamais hors périmètre autorisé).
+    // Même logique que pour la création (createUser ci-dessus), appliquée
+    // ici à la réaffectation.
+    if (actor.role !== "admin") {
+      if (!input.squadId) {
+        return { ok: false, error: "Sélectionnez une Squad de destination." };
+      }
+      const { data: destSquad } = await supabase.from("squads").select("id, tribe_id").eq("id", input.squadId).maybeSingle();
+      if (!destSquad) return { ok: false, error: "Squad introuvable." };
+
+      if (actor.role === "squad_lead") {
+        const own = await getSquadLedBy(supabase, actor.id);
+        if (!own || own.id !== destSquad.id) {
+          return { ok: false, error: "Vous ne pouvez rattacher un collaborateur qu'à votre propre Squad." };
+        }
+      } else if (actor.role === "tribe_lead") {
+        const tribe = await getTribeLedBy(supabase, actor.id);
+        if (!tribe || destSquad.tribe_id !== tribe.id) {
+          return { ok: false, error: "Cette Squad n'appartient pas à votre Tribe." };
+        }
+      } else if (actor.role === "du_head") {
+        const du = await getDuLedBy(supabase, actor.id);
+        const { data: destTribe } = await supabase.from("tribes").select("organizational_unit_id").eq("id", destSquad.tribe_id).maybeSingle();
+        if (!du || !destTribe || destTribe.organizational_unit_id !== du.id) {
+          return { ok: false, error: "Cette Squad n'appartient pas à votre DU." };
+        }
+      } else {
+        return { ok: false, error: "Non autorisé à modifier le rattachement." };
+      }
+    }
+    patch.squad_id = input.squadId;
+  }
 
   const { error } = await supabase.from("profiles").update(patch).eq("id", input.userId);
   if (error) return { ok: false, error: "Modification impossible (droits insuffisants ?)." };
@@ -285,10 +321,11 @@ export async function updateUser(input: UpdateUserInput): Promise<CreateUserResu
       entityId: input.userId,
       oldValue: { squadId: before.squad_id },
       newValue: { squadId: input.squadId },
+      actorId: actor.id,
     });
   }
 
-  await logAudit({ action: "user_updated", entityType: "profile", entityId: input.userId, oldValue: before, newValue: patch });
+  await logAudit({ action: "user_updated", entityType: "profile", entityId: input.userId, oldValue: before, newValue: patch, actorId: actor.id });
   revalidateHierarchyViews();
   return { ok: true };
 }

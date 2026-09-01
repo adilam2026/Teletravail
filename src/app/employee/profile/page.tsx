@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getResolvedQuota, getRuleSettings } from "@/lib/data/planning";
 import { getDuLedBy, getSquadLedBy, getTribeLedBy } from "@/lib/data/hierarchy";
+import { EditOwnProfileForm } from "@/components/employee/EditOwnProfileForm";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrateur",
@@ -62,8 +63,6 @@ export default async function EmployeeProfilePage() {
   }
 
   const fields: [string, string][] = [
-    ["Prénom", profile.first_name],
-    ["Nom", profile.last_name],
     ["Identifiant", profile.login],
     ["Email", profile.email ?? "—"],
     ["Niveau hiérarchique", ROLE_LABELS[profile.role] ?? profile.role],
@@ -78,6 +77,7 @@ export default async function EmployeeProfilePage() {
 
       <div className="card">
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <EditOwnProfileForm userId={profile.id} firstName={profile.first_name} lastName={profile.last_name} />
           {fields.map(([label, value]) => (
             <div key={label}>
               <dt className="text-xs font-medium text-slate-400">{label}</dt>

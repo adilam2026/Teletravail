@@ -5,6 +5,7 @@ import { getDuLedBy, getStructureForDu, loadGroupWeek } from "@/lib/data/hierarc
 import { addWeeks, currentWeekStart, mondayOf } from "@/lib/date/casablanca";
 import { StatusBadge } from "@/components/StatusBadge";
 import { QuickDecisionButton } from "@/components/validation/QuickDecisionButton";
+import { EditProfileButton, type SquadOption } from "@/components/admin/EditProfileButton";
 import type { PlanStatus } from "@/lib/supabase/database.types";
 
 export default async function DuOverviewPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
@@ -23,6 +24,14 @@ export default async function DuOverviewPage({ searchParams }: { searchParams: P
   const weekByMember = new Map(overview.members.map((m) => [m.profile.id, m]));
   const tribeLeadById = new Map(tribeLeads.map((l) => [l.id, l]));
   const squadLeadById = new Map(squadLeads.map((l) => [l.id, l]));
+  const tribeById = new Map(tribes.map((t) => [t.id, t]));
+  // Toutes les Squads de la DU (toutes Tribes confondues) : un Responsable
+  // DU peut réaffecter un collaborateur d'une Squad/Tribe à l'autre au sein
+  // de sa propre DU (section 1-2 du cahier des charges).
+  const duSquadOptions: SquadOption[] = squads.map((s) => {
+    const tribeName = tribeById.get(s.tribe_id)?.name;
+    return { id: s.id, label: [tribeName, s.name].filter(Boolean).join(" / ") };
+  });
 
   return (
     <div className="space-y-6">
@@ -63,15 +72,24 @@ export default async function DuOverviewPage({ searchParams }: { searchParams: P
                     </div>
                     <div className="divide-y divide-slate-100">
                       {squadLead && (
-                        <MemberRow employeeId={squadLead.id} name={`${squadLead.first_name} ${squadLead.last_name}`} sub="Squad Lead" week={weekByMember.get(squadLead.id)} />
+                        <MemberRow
+                          employeeId={squadLead.id}
+                          firstName={squadLead.first_name}
+                          lastName={squadLead.last_name}
+                          sub="Squad Lead"
+                          week={weekByMember.get(squadLead.id)}
+                        />
                       )}
                       {squadMembers.map((m) => (
                         <MemberRow
                           key={m.id}
                           employeeId={m.id}
-                          name={`${m.first_name} ${m.last_name}`}
+                          firstName={m.first_name}
+                          lastName={m.last_name}
                           sub={m.employee_type === "internal" ? "Interne" : "Externe"}
                           week={weekByMember.get(m.id)}
+                          squadOptions={duSquadOptions}
+                          currentSquadId={squad.id}
                         />
                       ))}
                     </div>
@@ -90,19 +108,25 @@ export default async function DuOverviewPage({ searchParams }: { searchParams: P
 
 function MemberRow({
   employeeId,
-  name,
+  firstName,
+  lastName,
   sub,
   week,
+  squadOptions,
+  currentSquadId,
 }: {
   employeeId: string;
-  name: string;
+  firstName: string;
+  lastName: string;
   sub: string;
   week?: { planId: string | null; status: PlanStatus | "not_submitted"; days: { date: string; icon: string; label: string }[] };
+  squadOptions?: SquadOption[];
+  currentSquadId?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+    <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-2.5">
       <div>
-        <p className="text-sm font-medium text-slate-800">{name}</p>
+        <EditProfileButton userId={employeeId} firstName={firstName} lastName={lastName} squadOptions={squadOptions} currentSquadId={currentSquadId} />
         <p className="text-xs text-slate-400">{sub}</p>
       </div>
       <div className="flex flex-wrap items-center gap-4">

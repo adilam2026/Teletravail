@@ -5,6 +5,7 @@ import { getMembersForTribe, getTribeLedBy, loadGroupWeek } from "@/lib/data/hie
 import { addWeeks, currentWeekStart, mondayOf } from "@/lib/date/casablanca";
 import { StatusBadge } from "@/components/StatusBadge";
 import { QuickDecisionButton } from "@/components/validation/QuickDecisionButton";
+import { EditProfileButton, type SquadOption } from "@/components/admin/EditProfileButton";
 import type { PlanStatus } from "@/lib/supabase/database.types";
 
 export default async function TribeOverviewPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
@@ -22,6 +23,11 @@ export default async function TribeOverviewPage({ searchParams }: { searchParams
   const overview = await loadGroupWeek(supabase, allWeekMembers, weekStart);
   const weekByMember = new Map(overview.members.map((m) => [m.profile.id, m]));
   const squadLeadById = new Map(squadLeads.map((l) => [l.id, l]));
+  // Toutes les Squads de la Tribe : un Tribe Lead peut réaffecter un
+  // collaborateur d'une Squad à l'autre au sein de sa propre Tribe
+  // (section 1-2 du cahier des charges — pas besoin du préfixe DU/Tribe
+  // dans le libellé, elles appartiennent toutes à la même Tribe).
+  const tribeSquadOptions: SquadOption[] = squads.map((s) => ({ id: s.id, label: s.name }));
 
   return (
     <div className="space-y-6">
@@ -51,15 +57,18 @@ export default async function TribeOverviewPage({ searchParams }: { searchParams
             </div>
             <div className="divide-y divide-slate-100">
               {lead && (
-                <MemberRow employeeId={lead.id} name={`${lead.first_name} ${lead.last_name}`} sub="Squad Lead" week={weekByMember.get(lead.id)} />
+                <MemberRow employeeId={lead.id} firstName={lead.first_name} lastName={lead.last_name} sub="Squad Lead" week={weekByMember.get(lead.id)} />
               )}
               {squadMembers.map((m) => (
                 <MemberRow
                   key={m.id}
                   employeeId={m.id}
-                  name={`${m.first_name} ${m.last_name}`}
+                  firstName={m.first_name}
+                  lastName={m.last_name}
                   sub={m.employee_type === "internal" ? "Interne" : "Externe"}
                   week={weekByMember.get(m.id)}
+                  squadOptions={tribeSquadOptions}
+                  currentSquadId={squad.id}
                 />
               ))}
               {squadMembers.length === 0 && !lead && <p className="px-5 py-4 text-sm text-slate-400">Aucun membre.</p>}
@@ -74,19 +83,25 @@ export default async function TribeOverviewPage({ searchParams }: { searchParams
 
 function MemberRow({
   employeeId,
-  name,
+  firstName,
+  lastName,
   sub,
   week,
+  squadOptions,
+  currentSquadId,
 }: {
   employeeId: string;
-  name: string;
+  firstName: string;
+  lastName: string;
   sub: string;
   week?: { planId: string | null; status: PlanStatus | "not_submitted"; days: { date: string; icon: string; label: string }[] };
+  squadOptions?: SquadOption[];
+  currentSquadId?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+    <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-3">
       <div>
-        <p className="text-sm font-medium text-slate-800">{name}</p>
+        <EditProfileButton userId={employeeId} firstName={firstName} lastName={lastName} squadOptions={squadOptions} currentSquadId={currentSquadId} />
         <p className="text-xs text-slate-400">{sub}</p>
       </div>
       <div className="flex flex-wrap items-center gap-4">

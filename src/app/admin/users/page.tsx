@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { CreateUserForm } from "@/components/admin/CreateUserForm";
 import { UserRowActions } from "@/components/UserRowActions";
+import { EditProfileButton } from "@/components/admin/EditProfileButton";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrateur",
@@ -24,18 +25,6 @@ export default async function AdminUsersPage() {
 
   const duNameById = new Map((orgUnits ?? []).map((u) => [u.id, u.name]));
   const tribeById = new Map((tribes ?? []).map((t) => [t.id, t]));
-  const squadById = new Map((squads ?? []).map((s) => [s.id, s]));
-
-  function contextFor(u: { role: string; squad_id: string | null }) {
-    if (u.role === "employee" && u.squad_id) {
-      const squad = squadById.get(u.squad_id);
-      if (!squad) return null;
-      const tribe = tribeById.get(squad.tribe_id);
-      const duName = tribe ? duNameById.get(tribe.organizational_unit_id) : undefined;
-      return [duName, tribe?.name, squad.name].filter(Boolean).join(" / ");
-    }
-    return null;
-  }
 
   return (
     <div className="space-y-6">
@@ -68,22 +57,35 @@ export default async function AdminUsersPage() {
       </div>
 
       <div className="card divide-y divide-slate-100 p-0">
-        {(users ?? []).map((u) => (
-          <div key={u.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-            <div>
-              <p className="text-sm font-medium text-slate-900">
-                {u.first_name} {u.last_name}
-                {u.status === "inactive" && <span className="ml-2 text-xs font-normal text-rose-500">Inactif</span>}
-              </p>
-              <p className="text-xs text-slate-400">
-                {ROLE_LABELS[u.role] ?? u.role}
-                {u.employee_type && ` · ${u.employee_type === "internal" ? "Interne" : "Externe"}`}
-                {contextFor(u) && ` · ${contextFor(u)}`} · {u.login}
-              </p>
+        {(users ?? []).map((u) => {
+          const squadOptions =
+            u.role === "employee"
+              ? (squads ?? []).map((s) => {
+                  const tribe = tribeById.get(s.tribe_id);
+                  const duName = tribe ? duNameById.get(tribe.organizational_unit_id) : undefined;
+                  return { id: s.id, label: [duName, tribe?.name, s.name].filter(Boolean).join(" / ") };
+                })
+              : undefined;
+          return (
+            <div key={u.id} className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+              <EditProfileButton
+                userId={u.id}
+                firstName={u.first_name}
+                lastName={u.last_name}
+                squadOptions={squadOptions}
+                currentSquadId={u.squad_id}
+                statusBadge={u.status === "inactive" ? <span className="ml-2 text-xs font-normal text-rose-500">Inactif</span> : null}
+              />
+              <div className="flex flex-col items-end gap-1">
+                <p className="text-xs text-slate-400">
+                  {ROLE_LABELS[u.role] ?? u.role}
+                  {u.employee_type && ` · ${u.employee_type === "internal" ? "Interne" : "Externe"}`} · {u.login}
+                </p>
+                <UserRowActions userId={u.id} status={u.status} isSelf={u.id === actor.id} userLabel={`${u.first_name} ${u.last_name}`} />
+              </div>
             </div>
-            <UserRowActions userId={u.id} status={u.status} isSelf={u.id === actor.id} userLabel={`${u.first_name} ${u.last_name}`} />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

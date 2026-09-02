@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const ACTION_LABELS: Record<string, string> = {
   week_submitted: "Semaine soumise",
+  week_recalled: "Semaine rappelée",
   week_validated: "Semaine validée",
   week_rejected: "Semaine refusée",
   week_needs_changes: "Modification demandée",

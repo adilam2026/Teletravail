@@ -44,8 +44,18 @@ export async function getWeekHistory(planId: string): Promise<WeekHistoryResult 
   const { data: plan } = await supabase.from("weekly_plans").select("id, employee_id").eq("id", planId).maybeSingle();
   if (!plan) return { ok: false, error: "Semaine introuvable." };
 
+  // Seules les actions métier de validation (soumission, rappel, décision,
+  // réouverture) ont leur place dans cet historique — les événements
+  // techniques d'édition jour par jour (day_added/day_removed/day_replaced/
+  // modified_by_manager) sont exclus : ils créent un événement par clic sur
+  // la grille et noient l'historique de validation dans du bruit.
   const [{ data: events }, { data: versions }] = await Promise.all([
-    supabase.from("weekly_plan_events").select("*").eq("weekly_plan_id", planId).order("occurred_at", { ascending: true }),
+    supabase
+      .from("weekly_plan_events")
+      .select("*")
+      .eq("weekly_plan_id", planId)
+      .in("event_type", ["submitted", "resubmitted", "recalled", "validated", "rejected", "changes_requested", "reopen_requested", "reopen_approved"])
+      .order("occurred_at", { ascending: true }),
     supabase.from("weekly_plan_versions").select("*").eq("weekly_plan_id", planId).order("version_number", { ascending: true }),
   ]);
 

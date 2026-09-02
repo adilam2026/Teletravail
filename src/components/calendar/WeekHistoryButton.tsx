@@ -7,10 +7,6 @@ import { isoWeekday } from "@/lib/rules-engine/calendar";
 import { WEEKDAY_LABELS } from "@/lib/rules-engine/calendar";
 
 const EVENT_LABELS: Record<string, { label: string; icon: string }> = {
-  day_added: { label: "Jour ajouté", icon: "➕" },
-  day_removed: { label: "Jour retiré", icon: "➖" },
-  day_replaced: { label: "Jour remplacé", icon: "🔁" },
-  modified_by_manager: { label: "Planning modifié", icon: "✎" },
   submitted: { label: "Semaine soumise", icon: "📤" },
   resubmitted: { label: "Nouvelle soumission", icon: "📤" },
   recalled: { label: "Demande rappelée", icon: "↩️" },
@@ -100,9 +96,7 @@ export function WeekHistoryButton({ planId, compact }: { planId: string; compact
                         {e.actorName}
                         {e.isOnBehalf ? " (a agi pour le compte du collaborateur)" : ""}
                       </p>
-                      {(e.eventType.startsWith("day_") || e.eventType === "modified_by_manager" || e.eventType.includes("submit")) && (
-                        <p className="mt-1 text-sm text-slate-600">{formatDaysList(e.daysAfter)}</p>
-                      )}
+                      {e.eventType.includes("submit") && <p className="mt-1 text-sm text-slate-600">{formatDaysList(e.daysAfter)}</p>}
                       {e.comment && <p className="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-sm italic text-slate-600">« {e.comment} »</p>}
                     </li>
                   );

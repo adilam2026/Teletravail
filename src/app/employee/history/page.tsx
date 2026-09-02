@@ -1,14 +1,17 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 
+// Seules les actions majeures du cycle de validation d'une semaine ont leur
+// place ici (section "Suivi de vos demandes et décisions") — le reste
+// (édition de compte, absences...) relève d'autres écrans dédiés.
 const ACTION_LABELS: Record<string, string> = {
   week_submitted: "Semaine soumise",
+  week_recalled: "Semaine rappelée",
   week_validated: "Semaine validée",
   week_rejected: "Semaine refusée",
   week_needs_changes: "Modification demandée",
   week_reopen_requested: "Réouverture demandée",
   week_reopen_approved: "Réouverture acceptée",
-  password_changed: "Mot de passe modifié",
 };
 
 export default async function EmployeeHistoryPage() {
@@ -18,6 +21,7 @@ export default async function EmployeeHistoryPage() {
   const { data: logs } = await supabase
     .from("audit_logs")
     .select("*")
+    .in("action", Object.keys(ACTION_LABELS))
     .order("created_at", { ascending: false })
     .limit(100);
 

@@ -36,9 +36,9 @@ export function NavSidebar({
   return (
     <>
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3 lg:hidden">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <Link href={items[0]?.href ?? "/"} onClick={() => setOpen(false)} className="flex items-center gap-2 text-sm font-semibold text-slate-900">
           <span className="text-lg">🏠</span> Télétravail
-        </div>
+        </Link>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -51,9 +51,9 @@ export function NavSidebar({
       <aside
         className={`${open ? "block" : "hidden"} border-b border-slate-100 bg-white lg:sticky lg:top-0 lg:block lg:h-screen lg:w-64 lg:border-b-0 lg:border-r`}
       >
-        <div className="hidden items-center gap-2 px-6 py-6 text-lg font-semibold text-slate-900 lg:flex">
+        <Link href={items[0]?.href ?? "/"} className="hidden items-center gap-2 px-6 py-6 text-lg font-semibold text-slate-900 lg:flex">
           <span className="text-xl">🏠</span> Télétravail
-        </div>
+        </Link>
 
         <div className="px-4 pb-2 pt-4 lg:px-6 lg:pt-0">
           <p className="text-sm font-semibold text-slate-900">{userName}</p>

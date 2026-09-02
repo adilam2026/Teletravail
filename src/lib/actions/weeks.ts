@@ -22,7 +22,7 @@ function revalidateValidationViews() {
 
 function revalidateWeekViews() {
   revalidatePath("/employee/agenda");
-  revalidatePath("/employee/weeks");
+  revalidatePath("/employee/planning");
   revalidateValidationViews();
 }
 
@@ -105,7 +105,7 @@ export async function toggleTeleworkDay(
       daysAfter: after,
     });
     revalidatePath("/employee/agenda");
-    revalidatePath("/employee/weeks");
+    revalidatePath("/employee/planning");
     if (isActingOnBehalf) revalidateValidationViews();
     return { ok: true };
   }

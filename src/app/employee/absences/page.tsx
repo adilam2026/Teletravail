@@ -11,7 +11,7 @@ export default async function EmployeeAbsencesPage() {
   const [{ data: absences }, { data: holidays }, { data: types }, { data: setting }] = await Promise.all([
     supabase
       .from("absences")
-      .select("id, absence_type_id, start_date, end_date, comment, absence_types(name)")
+      .select("id, absence_type_id, start_date, end_date, comment, source, created_by, absence_types(name)")
       .eq("employee_id", profile.id)
       .order("start_date", { ascending: false }),
     supabase.from("public_holidays").select("*").gte("date", today).order("date", { ascending: true }).limit(8),
@@ -21,6 +21,12 @@ export default async function EmployeeAbsencesPage() {
 
   const selfServiceEnabled = setting?.value === true;
   const typeOptions = (types ?? []).map((t) => ({ id: t.id, name: t.name }));
+
+  const creatorIds = [...new Set((absences ?? []).map((a) => a.created_by).filter((id): id is string => !!id && id !== profile.id))];
+  const { data: creators } = creatorIds.length
+    ? await supabase.from("profiles").select("id, first_name, last_name").in("id", creatorIds)
+    : { data: [] as { id: string; first_name: string; last_name: string }[] };
+  const creatorNameById = new Map((creators ?? []).map((c) => [c.id, `${c.first_name} ${c.last_name}`]));
 
   return (
     <div className="space-y-8">
@@ -36,16 +42,23 @@ export default async function EmployeeAbsencesPage() {
         {(absences ?? []).map((a) => {
           const type = (a as unknown as { absence_types: { name: string } | null }).absence_types;
           const isFuture = a.start_date >= today;
+          const addedByOther = a.created_by && a.created_by !== profile.id;
           return (
             <div key={a.id} className="px-5 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">
-                    {type?.name ?? "Absence"}
-                    {!isFuture && <span className="ml-2 text-xs font-normal text-slate-400">Passée</span>}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium text-slate-900">
+                      {type?.name ?? "Absence"}
+                      {!isFuture && <span className="ml-2 text-xs font-normal text-slate-400">Passée</span>}
+                    </p>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                      ✓ Confirmée
+                    </span>
+                  </div>
                   <p className="text-xs text-slate-400">
                     Du {a.start_date} au {a.end_date}
+                    {addedByOther && ` · Ajoutée par ${creatorNameById.get(a.created_by!) ?? "votre hiérarchie"}`}
                   </p>
                   {a.comment && <p className="mt-1 text-xs text-slate-500">{a.comment}</p>}
                 </div>

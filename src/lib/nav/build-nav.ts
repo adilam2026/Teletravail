@@ -45,7 +45,7 @@ export async function buildNavForRole(supabase: AppSupabaseClient, profile: Prof
   const personalSection = isTeamLead ? "Moi" : undefined;
   items.push(
     { href: "/employee/agenda", label: "Mon agenda", icon: "📅", section: personalSection },
-    { href: "/employee/weeks", label: "Mes semaines", icon: "🗂️", section: personalSection },
+    { href: "/employee/planning", label: "Planning", icon: "🗂️", section: personalSection },
     { href: "/employee/absences", label: "Mes absences", icon: "🌴", section: personalSection },
     { href: "/employee/history", label: "Historique", icon: "🕘", section: personalSection },
     { href: "/employee/profile", label: "Mon profil", icon: "👤", section: personalSection }

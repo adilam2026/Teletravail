@@ -64,8 +64,8 @@ export async function requireRole(...roles: AppRole[]): Promise<CurrentUser> {
 
 export function homePathForRole(role: AppRole): string {
   if (role === "admin") return "/admin/dashboard";
-  if (role === "du_head") return "/du/overview";
-  if (role === "tribe_lead") return "/tribe/overview";
+  if (role === "du_head") return "/du/planning";
+  if (role === "tribe_lead") return "/tribe/planning";
   if (role === "squad_lead") return "/squad/planning";
   return "/employee/agenda";
 }

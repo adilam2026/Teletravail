@@ -161,22 +161,49 @@ export async function getDirectValidatorId(supabase: DB, profile: ProfileRow): P
   return null;
 }
 
+/**
+ * Périmètre complet visible dans "Planning équipe" (pas seulement les
+ * rattachés directs) : pour un Tribe Lead/Responsable DU cela inclut aussi
+ * les collaborateurs au-delà de leurs seuls Squad/Tribe Leads directs — le
+ * badge "à valider" de la sidebar doit refléter ce même périmètre, pas un
+ * sous-ensemble plus étroit.
+ */
+async function getFullTeamPlanningScope(supabase: DB, actor: ProfileRow): Promise<ProfileRow[]> {
+  if (actor.role === "squad_lead") return getDirectReports(supabase, actor);
+  if (actor.role === "tribe_lead") {
+    const tribe = await getTribeLedBy(supabase, actor.id);
+    if (!tribe) return [];
+    const { squadLeads, members } = await getMembersForTribe(supabase, tribe.id);
+    return [...squadLeads, ...members];
+  }
+  if (actor.role === "du_head") {
+    const du = await getDuLedBy(supabase, actor.id);
+    if (!du) return [];
+    const { squadLeads, members } = await getStructureForDu(supabase, du.id);
+    return [...squadLeads, ...members];
+  }
+  return [];
+}
+
 export async function countPendingValidations(supabase: DB, actor: ProfileRow): Promise<number> {
-  const reports = await getDirectReports(supabase, actor);
-  if (reports.length === 0) return 0;
+  const scope = await getFullTeamPlanningScope(supabase, actor);
+  if (scope.length === 0) return 0;
   const { count } = await supabase
     .from("weekly_plans")
     .select("id", { count: "exact", head: true })
     .eq("status", "submitted")
-    .in("employee_id", reports.map((r) => r.id));
+    .in("employee_id", scope.map((r) => r.id));
   return count ?? 0;
 }
+
+export type GroupDayKind = "telework" | "office" | "holiday" | "absence_leave" | "absence_sick" | "absence_other" | "exception";
 
 export interface GroupMemberWeek {
   profile: ProfileRow;
   planId: string | null;
   status: PlanStatus | "not_submitted";
-  days: { date: string; icon: string; label: string }[];
+  managerComment: string | null;
+  days: { date: string; icon: string; label: string; kind: GroupDayKind }[];
 }
 
 export interface GroupWeekOverview {
@@ -249,16 +276,24 @@ export async function loadGroupWeek(supabase: DB, members: ProfileRow[], weekSta
     const days = dates.map((date) => {
       const badge: DayBadge | null = buildDayBadge(date, holidays, memberAbsences, exceptions);
       const isTelework = selected.has(date);
+      // Un jour férié n'est "attendu" pour personne ce jour-là : exclu du
+      // dénominateur (pas seulement du numérateur), sinon un jour férié
+      // affiche à tort une présence proche de 0% (section 5 du cahier des
+      // charges "vue manager" — le taux ne doit refléter que les jours
+      // réellement travaillés par l'équipe).
+      const isHoliday = badge?.kind === "holiday_national" || badge?.kind === "holiday_religious";
 
-      officeCounts[date]!.totalCount += 1;
-      if (!isTelework && !badge) officeCounts[date]!.officeCount += 1;
+      if (!isHoliday) {
+        officeCounts[date]!.totalCount += 1;
+        if (!isTelework && !badge) officeCounts[date]!.officeCount += 1;
+      }
 
-      if (badge) return { date, icon: badge.icon, label: badge.label };
-      if (isTelework) return { date, icon: "🏠", label: "Télétravail" };
-      return { date, icon: "🏢", label: "Bureau" };
+      if (badge) return { date, icon: badge.icon, label: badge.label, kind: isHoliday ? ("holiday" as const) : (badge.kind as GroupDayKind) };
+      if (isTelework) return { date, icon: "🏠", label: "Télétravail", kind: "telework" as const };
+      return { date, icon: "🏢", label: "Bureau", kind: "office" as const };
     });
 
-    return { profile, planId: plan?.id ?? null, status: plan?.status ?? "not_submitted", days };
+    return { profile, planId: plan?.id ?? null, status: plan?.status ?? "not_submitted", managerComment: plan?.manager_comment ?? null, days };
   });
 
   const presence = evaluateTeamPresence(dates, officeCounts, settings);

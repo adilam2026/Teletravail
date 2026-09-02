@@ -32,8 +32,9 @@ export default async function AgendaPage({ searchParams }: { searchParams: Promi
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Mon agenda</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-slate-900">Saisie télétravail</h1>
+          <p className="mt-1 text-sm text-slate-500">Saisissez et soumettez vos jours de télétravail semaine par semaine.</p>
+          <p className="mt-1 text-xs text-slate-400">
             {validatedCount} semaine{validatedCount > 1 ? "s" : ""} validée{validatedCount > 1 ? "s" : ""} · {pendingCount} en attente ·{" "}
             {draftCount} brouillon{draftCount > 1 ? "s" : ""}
           </p>

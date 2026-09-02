@@ -29,22 +29,21 @@ export async function buildNavForRole(supabase: AppSupabaseClient, profile: Prof
   if (isTeamLead) {
     const pending = await countPendingValidations(supabase, profile);
     if (profile.role === "squad_lead") {
-      items.push({ href: "/squad/planning", label: "Planning équipe", icon: "📆", section: "Mon équipe" });
+      items.push({ href: "/squad/planning", label: "Planning équipe", icon: "📆", badge: pending, section: "Mon équipe" });
       items.push({ href: "/squad/team", label: "Ma Squad", icon: "👥", section: "Mon équipe" });
-      items.push({ href: "/squad/validation", label: "À valider", icon: "✅", badge: pending, section: "Mon équipe" });
       items.push({ href: "/squad/absences", label: "Absences de la Squad", icon: "🌴", section: "Mon équipe" });
     } else if (profile.role === "tribe_lead") {
+      items.push({ href: "/tribe/planning", label: "Planning équipe", icon: "📆", badge: pending, section: "Mon équipe" });
       items.push({ href: "/tribe/overview", label: "Ma Tribe", icon: "🧭", section: "Mon équipe" });
-      items.push({ href: "/tribe/validation", label: "À valider", icon: "✅", badge: pending, section: "Mon équipe" });
     } else {
+      items.push({ href: "/du/planning", label: "Planning équipe", icon: "📆", badge: pending, section: "Mon équipe" });
       items.push({ href: "/du/overview", label: "Ma DU", icon: "🏛️", section: "Mon équipe" });
-      items.push({ href: "/du/validation", label: "À valider", icon: "✅", badge: pending, section: "Mon équipe" });
     }
   }
 
   const personalSection = isTeamLead ? "Moi" : undefined;
   items.push(
-    { href: "/employee/agenda", label: "Mon agenda", icon: "📅", section: personalSection },
+    { href: "/employee/agenda", label: "Saisie télétravail", icon: "📅", section: personalSection },
     { href: "/employee/planning", label: "Planning", icon: "🗂️", section: personalSection },
     { href: "/employee/absences", label: "Mes absences", icon: "🌴", section: personalSection },
     { href: "/employee/history", label: "Historique", icon: "🕘", section: personalSection },

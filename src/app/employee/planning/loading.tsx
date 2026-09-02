@@ -1,4 +1,4 @@
-import { SkeletonBlock, SkeletonWeekCard } from "@/components/ui/Skeleton";
+import { SkeletonBlock, SkeletonListCard } from "@/components/ui/Skeleton";
 
 export default function Loading() {
   return (
@@ -10,11 +10,7 @@ export default function Loading() {
         </div>
         <SkeletonBlock className="h-9 w-56" />
       </div>
-      <div className="space-y-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <SkeletonWeekCard key={i} />
-        ))}
-      </div>
+      <SkeletonListCard rows={5} />
     </div>
   );
 }

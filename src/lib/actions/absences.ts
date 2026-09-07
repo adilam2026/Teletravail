@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireRole, requireUser } from "@/lib/auth/session";
 import { logAudit } from "@/lib/audit";
+import { reconcileWeeksForAbsence } from "@/lib/actions/weeks";
 import type { ActionResult } from "@/lib/actions/account";
 import type { AbsenceRow } from "@/lib/supabase/database.types";
 
@@ -57,6 +58,10 @@ export async function createAbsence(input: AbsenceInput): Promise<ActionResult> 
   if (error || !data) return { ok: false, error: "Création impossible (hors de votre périmètre ?)." };
 
   await logAudit({ action: "absence_created", entityType: "absence", entityId: data.id, newValue: input });
+  // Un télétravail déjà posé la veille/au retour (ou pendant) de cette
+  // absence est désormais invalide : ne jamais le laisser silencieusement en
+  // place (section 7-11 du cahier des charges "avant/après absence").
+  await reconcileWeeksForAbsence(supabase, input.employeeId, input.startDate, input.endDate);
   revalidateAbsenceViews();
   return { ok: true };
 }
@@ -85,6 +90,9 @@ export async function updateAbsence(input: UpdateAbsenceInput): Promise<ActionRe
   if (error) return { ok: false, error: "Modification impossible (absence passée ou hors de votre périmètre)." };
 
   await logAudit({ action: "absence_updated", entityType: "absence", entityId: input.id, oldValue: before, newValue: patch });
+  if (before) {
+    await reconcileWeeksForAbsence(supabase, before.employee_id, patch.start_date ?? before.start_date, patch.end_date ?? before.end_date);
+  }
   revalidateAbsenceViews();
   return { ok: true };
 }

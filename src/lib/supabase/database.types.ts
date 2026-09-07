@@ -239,6 +239,29 @@ export type WeeklyPlanEventInsert = {
   comment?: string | null;
 }
 
+export type ReopenRequestStatus = "pending" | "approved" | "rejected";
+
+export type WeekReopenRequestRow = {
+  id: string;
+  weekly_plan_id: string;
+  employee_id: string;
+  requested_by: string | null;
+  requested_at: string;
+  reason: string | null;
+  status: ReopenRequestStatus;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_comment: string | null;
+  created_at: string;
+}
+
+export type WeekReopenRequestInsert = {
+  weekly_plan_id: string;
+  employee_id: string;
+  requested_by?: string | null;
+  reason?: string | null;
+}
+
 export type AbsenceTypeRow = {
   id: string;
   name: string;
@@ -416,6 +439,7 @@ export type Database = {
       weekly_plan_versions: Table<WeeklyPlanVersionRow, WeeklyPlanVersionInsert, WeeklyPlanVersionUpdate>;
       weekly_plan_version_days: Table<WeeklyPlanVersionDayRow, WeeklyPlanVersionDayInsert, Partial<WeeklyPlanVersionDayRow>>;
       weekly_plan_events: Table<WeeklyPlanEventRow, WeeklyPlanEventInsert, Partial<WeeklyPlanEventRow>>;
+      week_reopen_requests: Table<WeekReopenRequestRow, WeekReopenRequestInsert, Partial<WeekReopenRequestRow>>;
       absence_types: Table<AbsenceTypeRow, AbsenceTypeInsert, Partial<AbsenceTypeRow>>;
       absences: Table<AbsenceRow, AbsenceInsert, Partial<AbsenceRow>>;
       public_holidays: Table<PublicHolidayRow, PublicHolidayInsert, Partial<PublicHolidayRow>>;
@@ -448,6 +472,18 @@ export type Database = {
       };
       decide_week: {
         Args: { p_plan_id: string; p_decision: WeeklyPlanVersionDecisionCode; p_comment: string | null };
+        Returns: WeeklyPlanRow | null;
+      };
+      manager_validate_week: {
+        Args: { p_plan_id: string };
+        Returns: WeeklyPlanRow | null;
+      };
+      decide_reopen_request: {
+        Args: { p_request_id: string; p_approve: boolean; p_comment: string | null };
+        Returns: WeekReopenRequestRow | null;
+      };
+      reconcile_week_absence_conflict: {
+        Args: { p_plan_id: string; p_invalid_dates: string[] };
         Returns: WeeklyPlanRow | null;
       };
     };

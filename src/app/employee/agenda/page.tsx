@@ -66,6 +66,7 @@ export default async function AgendaPage({ searchParams }: { searchParams: Promi
             managerComment={week.plan.manager_comment}
             evaluationInput={week.evaluationInput}
             badges={week.badges}
+            latestReopenRequest={week.latestReopenRequest}
           />
         ))}
         {weeks.length === 0 && <p className="card text-center text-sm text-slate-400">Aucune semaine pour ce mois.</p>}

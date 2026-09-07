@@ -57,6 +57,7 @@ export default async function DuPlanningPage({ searchParams }: { searchParams: P
     status: m.status,
     managerComment: m.managerComment,
     days: m.days,
+    pendingReopenRequest: m.pendingReopenRequest,
   }));
 
   const tribeQuery = selectedTribeId ? `&tribe=${selectedTribeId}` : "";

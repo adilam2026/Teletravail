@@ -54,7 +54,19 @@ export async function getWeekHistory(planId: string): Promise<WeekHistoryResult 
       .from("weekly_plan_events")
       .select("*")
       .eq("weekly_plan_id", planId)
-      .in("event_type", ["submitted", "resubmitted", "recalled", "validated", "rejected", "changes_requested", "reopen_requested", "reopen_approved"])
+      .in("event_type", [
+        "submitted",
+        "resubmitted",
+        "recalled",
+        "validated",
+        "rejected",
+        "changes_requested",
+        "reopen_requested",
+        "reopen_approved",
+        "reopen_rejected",
+        "manager_override",
+        "absence_conflict_reopened",
+      ])
       .order("occurred_at", { ascending: true }),
     supabase.from("weekly_plan_versions").select("*").eq("weekly_plan_id", planId).order("version_number", { ascending: true }),
   ]);

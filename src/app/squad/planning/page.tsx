@@ -39,6 +39,7 @@ export default async function SquadPlanningPage({ searchParams }: { searchParams
     status: m.status,
     managerComment: m.managerComment,
     days: m.days,
+    pendingReopenRequest: m.pendingReopenRequest,
   }));
 
   return (

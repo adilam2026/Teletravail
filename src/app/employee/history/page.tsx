@@ -12,6 +12,9 @@ const ACTION_LABELS: Record<string, string> = {
   week_needs_changes: "Modification demandée",
   week_reopen_requested: "Réouverture demandée",
   week_reopen_approved: "Réouverture acceptée",
+  week_reopen_rejected: "Réouverture refusée",
+  week_manager_override: "Semaine modifiée et validée par votre manager",
+  week_absence_conflict: "Semaine réouverte automatiquement (conflit avec une absence)",
 };
 
 export default async function EmployeeHistoryPage() {

@@ -198,12 +198,20 @@ export async function countPendingValidations(supabase: DB, actor: ProfileRow): 
 
 export type GroupDayKind = "telework" | "office" | "holiday" | "absence_leave" | "absence_sick" | "absence_other" | "exception";
 
+export interface PendingReopenRequest {
+  id: string;
+  reason: string | null;
+  requestedAt: string;
+}
+
 export interface GroupMemberWeek {
   profile: ProfileRow;
   planId: string | null;
   status: PlanStatus | "not_submitted";
   managerComment: string | null;
   days: { date: string; icon: string; label: string; kind: GroupDayKind }[];
+  /** Demande de réouverture en attente sur cette semaine, le cas échéant (section 1 "vue manager"). */
+  pendingReopenRequest: PendingReopenRequest | null;
 }
 
 export interface GroupWeekOverview {
@@ -242,9 +250,15 @@ export async function loadGroupWeek(supabase: DB, members: ProfileRow[], weekSta
 
   const planByMember = new Map((plans ?? []).map((p) => [p.employee_id, p]));
   const planIds = (plans ?? []).map((p) => p.id);
-  const { data: teleworkDays } = planIds.length
-    ? await supabase.from("telework_days").select("weekly_plan_id, work_date").in("weekly_plan_id", planIds)
-    : { data: [] as { weekly_plan_id: string; work_date: string }[] };
+  const [{ data: teleworkDays }, { data: reopenRequests }] = await Promise.all([
+    planIds.length
+      ? supabase.from("telework_days").select("weekly_plan_id, work_date").in("weekly_plan_id", planIds)
+      : Promise.resolve({ data: [] as { weekly_plan_id: string; work_date: string }[] }),
+    planIds.length
+      ? supabase.from("week_reopen_requests").select("id, weekly_plan_id, reason, requested_at").in("weekly_plan_id", planIds).eq("status", "pending")
+      : Promise.resolve({ data: [] as { id: string; weekly_plan_id: string; reason: string | null; requested_at: string }[] }),
+  ]);
+  const reopenRequestByPlan = new Map((reopenRequests ?? []).map((r) => [r.weekly_plan_id, r]));
 
   const teleworkByPlan = new Map<string, Set<string>>();
   for (const d of teleworkDays ?? []) {
@@ -293,7 +307,16 @@ export async function loadGroupWeek(supabase: DB, members: ProfileRow[], weekSta
       return { date, icon: "🏢", label: "Bureau", kind: "office" as const };
     });
 
-    return { profile, planId: plan?.id ?? null, status: plan?.status ?? "not_submitted", managerComment: plan?.manager_comment ?? null, days };
+    const reopenRequest = plan ? reopenRequestByPlan.get(plan.id) : undefined;
+
+    return {
+      profile,
+      planId: plan?.id ?? null,
+      status: plan?.status ?? "not_submitted",
+      managerComment: plan?.manager_comment ?? null,
+      days,
+      pendingReopenRequest: reopenRequest ? { id: reopenRequest.id, reason: reopenRequest.reason, requestedAt: reopenRequest.requested_at } : null,
+    };
   });
 
   const presence = evaluateTeamPresence(dates, officeCounts, settings);

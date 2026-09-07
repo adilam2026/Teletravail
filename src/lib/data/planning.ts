@@ -9,7 +9,7 @@ import type {
 } from "@/lib/rules-engine";
 import { evaluateWeek, resolveWeeklyQuota } from "@/lib/rules-engine/engine";
 import type { WeekEvaluationInput, WeekEvaluationResult } from "@/lib/rules-engine/types";
-import type { ProfileRow, WeeklyPlanRow } from "@/lib/supabase/database.types";
+import type { ProfileRow, ReopenRequestStatus, WeeklyPlanRow } from "@/lib/supabase/database.types";
 import type { AppSupabaseClient as DB } from "@/lib/supabase/server";
 import { addWeeks, monthWeeksOwned, nowIso } from "@/lib/date/casablanca";
 import { perfTime } from "@/lib/perf";
@@ -321,12 +321,25 @@ export async function loadEmployeeWeek(
   return { plan, selectedDates, settings, result, badges, evaluationInput };
 }
 
+export interface LatestReopenRequest {
+  id: string;
+  status: ReopenRequestStatus;
+  reason: string | null;
+}
+
 export interface EmployeeMonthWeek {
   weekStart: string;
   plan: WeeklyPlanRow;
   badges: Record<string, DayBadge | null>;
   evaluationInput: WeekEvaluationInput;
   result: WeekEvaluationResult;
+  /**
+   * Dernière demande de modification (toute statut confondu) portée par ce
+   * plan — permet d'afficher aussi bien "en attente" que "refusée" côté
+   * collaborateur (section "Demande de modification d'une semaine déjà
+   * validée"), sans se limiter aux demandes encore actives.
+   */
+  latestReopenRequest: LatestReopenRequest | null;
 }
 
 export interface EmployeeMonthContext {
@@ -411,15 +424,35 @@ async function loadEmployeeMonthInner(supabase: DB, profile: ProfileRow, month: 
   }
 
   const planIds = [...planByWeek.values()].map((p) => p.id);
-  const { data: allDays } = planIds.length
-    ? await supabase.from("telework_days").select("weekly_plan_id, work_date").in("weekly_plan_id", planIds)
-    : { data: [] as { weekly_plan_id: string; work_date: string }[] };
+  const [{ data: allDays }, { data: reopenRequestRows }] = await Promise.all([
+    planIds.length
+      ? supabase.from("telework_days").select("weekly_plan_id, work_date").in("weekly_plan_id", planIds)
+      : Promise.resolve({ data: [] as { weekly_plan_id: string; work_date: string }[] }),
+    planIds.length
+      ? supabase
+          .from("week_reopen_requests")
+          .select("id, weekly_plan_id, status, reason, requested_at")
+          .in("weekly_plan_id", planIds)
+          .order("requested_at", { ascending: false })
+      : Promise.resolve({
+          data: [] as { id: string; weekly_plan_id: string; status: ReopenRequestStatus; reason: string | null; requested_at: string }[],
+        }),
+  ]);
 
   const daysByPlanId = new Map<string, string[]>();
   for (const d of allDays ?? []) {
     const list = daysByPlanId.get(d.weekly_plan_id) ?? [];
     list.push(d.work_date);
     daysByPlanId.set(d.weekly_plan_id, list);
+  }
+
+  // Trié par `requested_at desc` ci-dessus : la première ligne rencontrée par
+  // plan est bien la plus récente, quel que soit son statut.
+  const latestReopenRequestByPlan = new Map<string, LatestReopenRequest>();
+  for (const r of reopenRequestRows ?? []) {
+    if (!latestReopenRequestByPlan.has(r.weekly_plan_id)) {
+      latestReopenRequestByPlan.set(r.weekly_plan_id, { id: r.id, status: r.status, reason: r.reason });
+    }
   }
 
   function selectedDatesForWeek(weekStart: string): string[] {
@@ -464,8 +497,9 @@ async function loadEmployeeMonthInner(supabase: DB, profile: ProfileRow, month: 
     };
     const result = evaluateWeek(evaluationInput);
     const badges = Object.fromEntries(weekDates(weekStart).map((date) => [date, buildDayBadge(date, holidays, absences, exceptions)]));
+    const latestReopenRequest = latestReopenRequestByPlan.get(plan.id) ?? null;
 
-    return { weekStart, plan, badges, evaluationInput, result };
+    return { weekStart, plan, badges, evaluationInput, result, latestReopenRequest };
   });
 
   return { month, weeks };

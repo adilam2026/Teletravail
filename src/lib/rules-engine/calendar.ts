@@ -52,3 +52,25 @@ export function nextWorkingDay(
   }
   return d;
 }
+
+/**
+ * Symétrique de `nextWorkingDay` : dernier jour ouvré strictement avant
+ * `fromDate` (exclusif), en sautant les week-ends et, si `skipHolidays`, les
+ * jours fériés — utilisé pour la règle "veille d'absence" qui doit remonter
+ * au dernier jour réellement travaillé, pas simplement J-1 (un week-end ou un
+ * jour férié juste avant l'absence ne compte pas).
+ */
+export function previousWorkingDay(
+  fromDate: string,
+  holidays: HolidayDate[],
+  skipHolidays: boolean
+): string {
+  let d = fromDate;
+  for (let i = 0; i < 30; i++) {
+    if (!isWeekend(d) && !(skipHolidays && isHoliday(d, holidays))) {
+      return d;
+    }
+    d = addDaysStr(d, -1);
+  }
+  return d;
+}

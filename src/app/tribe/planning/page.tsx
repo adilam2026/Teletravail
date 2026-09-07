@@ -50,6 +50,7 @@ export default async function TribePlanningPage({ searchParams }: { searchParams
     status: m.status,
     managerComment: m.managerComment,
     days: m.days,
+    pendingReopenRequest: m.pendingReopenRequest,
   }));
 
   const squadQuery = selectedSquadId ? `&squad=${selectedSquadId}` : "";

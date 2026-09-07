@@ -324,6 +324,100 @@ describe("Sélection caduque écartée du calcul (jour bloqué a posteriori)", (
 
     expect(result.selectedCount).toBe(0);
   });
+
+  it("un mercredi posé en télétravail devient Bureau obligatoire quand une absence jeudi est ajoutée après coup", () => {
+    // Section 7 du cahier des charges "avant/après absence" : la sélection
+    // existante ne doit jamais rester silencieusement incohérente.
+    const result = evaluateWeek(
+      baseInput({
+        selectedDates: [WED],
+        absences: [{ startDate: THU, endDate: THU, triggersReturnRule: true }],
+      })
+    );
+    const wed = result.days.find((d) => d.date === WED)!;
+    expect(wed.selected).toBe(false);
+    expect(wed.ruleCode).toBe("BEFORE_ABSENCE");
+    expect(result.selectedCount).toBe(0);
+  });
+});
+
+describe("Veille d'absence (symétrique de la reprise)", () => {
+  it("absence le jeudi -> télétravail interdit le mercredi", () => {
+    const result = evaluateWeek(baseInput({ absences: [{ startDate: THU, endDate: THU, triggersReturnRule: true }] }));
+    const wed = result.days.find((d) => d.date === WED)!;
+    expect(wed.allowed).toBe(false);
+    expect(wed.ruleCode).toBe("BEFORE_ABSENCE");
+    expect(wed.reason).toMatch(/veille d'une absence/i);
+  });
+
+  it("absence du mardi au vendredi -> télétravail interdit le lundi", () => {
+    const result = evaluateWeek(baseInput({ absences: [{ startDate: TUE, endDate: FRI, triggersReturnRule: true }] }));
+    const mon = result.days.find((d) => d.date === MON)!;
+    expect(mon.allowed).toBe(false);
+    expect(mon.ruleCode).toBe("BEFORE_ABSENCE");
+  });
+
+  it("absence à partir du lundi -> le vendredi précédent (dernier jour travaillé) est interdit, pas simplement J-1", () => {
+    const result = evaluateWeek(
+      baseInput({ absences: [{ startDate: MON, endDate: MON, triggersReturnRule: true }] })
+    );
+    // Le week-end (samedi/dimanche précédents, hors semaine affichée) n'est
+    // pas un jour travaillé : le blocage remonte au vendredi précédent, qui
+    // n'apparaît même pas dans cette semaine-ci — rien de cette semaine ne
+    // doit donc être bloqué par cette absence-là.
+    for (const day of result.days) {
+      if (day.date !== MON) expect(day.ruleCode).not.toBe("BEFORE_ABSENCE");
+    }
+  });
+
+  it("le vendredi précédent est bien bloqué quand on évalue la semaine qui le contient", () => {
+    const prevWeekStart = "2026-08-31";
+    const result = evaluateWeek(baseInput({ weekStart: prevWeekStart, absences: [{ startDate: MON, endDate: MON, triggersReturnRule: true }] }));
+    const prevFriday = result.days.find((d) => d.date === "2026-09-04")!;
+    expect(prevFriday.allowed).toBe(false);
+    expect(prevFriday.ruleCode).toBe("BEFORE_ABSENCE");
+  });
+
+  it("un jour férié juste avant l'absence ne compte pas : on remonte au vrai dernier jour travaillé", () => {
+    // Absence à partir du jeudi, mercredi férié -> le blocage doit remonter au mardi.
+    const result = evaluateWeek(
+      baseInput({
+        holidays: [{ date: WED, name: "Férié Test", status: "confirmed" }],
+        absences: [{ startDate: THU, endDate: THU, triggersReturnRule: true }],
+      })
+    );
+    const tue = result.days.find((d) => d.date === TUE)!;
+    const wed = result.days.find((d) => d.date === WED)!;
+    expect(tue.ruleCode).toBe("BEFORE_ABSENCE");
+    expect(wed.ruleCode).toBe("PUBLIC_HOLIDAY");
+  });
+
+  it("absence longue traversant plusieurs semaines : bloque le dernier jour travaillé avant ET le premier jour travaillé après", () => {
+    // Congé du lundi 14 au vendredi 18 septembre 2026.
+    const weekBefore = evaluateWeek(baseInput({ weekStart: WEEK_START, absences: [{ startDate: "2026-09-14", endDate: "2026-09-18", triggersReturnRule: true }] }));
+    const fridayBefore = weekBefore.days.find((d) => d.date === FRI)!;
+    expect(fridayBefore.ruleCode).toBe("BEFORE_ABSENCE");
+
+    const weekAfter = evaluateWeek(baseInput({ weekStart: "2026-09-21", absences: [{ startDate: "2026-09-14", endDate: "2026-09-18", triggersReturnRule: true }] }));
+    const mondayAfter = weekAfter.days.find((d) => d.date === "2026-09-21")!;
+    expect(mondayAfter.ruleCode).toBe("RETURN_AFTER_ABSENCE");
+  });
+
+  it("un type d'absence qui ne déclenche pas la règle ne bloque pas la veille", () => {
+    const result = evaluateWeek(baseInput({ absences: [{ startDate: THU, endDate: THU, triggersReturnRule: false }] }));
+    const wed = result.days.find((d) => d.date === WED)!;
+    expect(wed.allowed).toBe(true);
+  });
+});
+
+describe("Jour d'absence : jamais sélectionnable en télétravail", () => {
+  it("un jour dans la période d'absence est bloqué, quel que soit un télétravail déjà posé ce jour-là", () => {
+    const result = evaluateWeek(baseInput({ selectedDates: [WED], absences: [{ startDate: WED, endDate: WED, triggersReturnRule: true }] }));
+    const wed = result.days.find((d) => d.date === WED)!;
+    expect(wed.selected).toBe(false);
+    expect(wed.allowed).toBe(false);
+    expect(wed.ruleCode).toBe("ON_ABSENCE");
+  });
 });
 
 describe("Pont vendredi / lundi (semaines consécutives)", () => {

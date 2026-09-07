@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { WEEKDAY_LABELS } from "@/lib/rules-engine/calendar";
 import type { WeekEvaluationInput } from "@/lib/rules-engine/types";
-import type { DayBadge } from "@/lib/data/planning";
+import type { DayBadge, LatestReopenRequest } from "@/lib/data/planning";
 import type { PlanStatus } from "@/lib/supabase/database.types";
 import { ComplianceBadge, StatusBadge } from "@/components/StatusBadge";
 import { SubmitWeekButton } from "@/components/employee/SubmitWeekButton";
@@ -34,6 +34,8 @@ export interface MonthWeekCardProps {
   badges: Record<string, DayBadge | null>;
   /** Fourni quand un supérieur prépare/ajuste la semaine d'un rattaché (section 14-19) — sinon, l'agenda de l'acteur lui-même. */
   targetEmployeeId?: string;
+  /** Dernière demande de réouverture (toute statut confondu) sur cette semaine — n'existe que côté collaborateur. */
+  latestReopenRequest?: LatestReopenRequest | null;
 }
 
 /**
@@ -52,6 +54,7 @@ export function MonthWeekCard({
   evaluationInput,
   badges,
   targetEmployeeId,
+  latestReopenRequest = null,
 }: MonthWeekCardProps) {
   const [status, setStatus] = useState<PlanStatus>(initialStatus);
   // Un supérieur peut ajuster une semaine même déjà soumise (préparation/correction avant
@@ -175,7 +178,9 @@ export function MonthWeekCard({
           <RecallWeekButton planId={planId} onOptimistic={() => setStatus("draft")} />
         )}
 
-        {status === "validated" && !targetEmployeeId && <ReopenWeekButton planId={planId} />}
+        {status === "validated" && !targetEmployeeId && (
+          <ReopenWeekButton planId={planId} latestReopenRequest={latestReopenRequest} />
+        )}
       </div>
     </div>
   );

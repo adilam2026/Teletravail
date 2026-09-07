@@ -22,6 +22,9 @@ const EVENT_LABELS: Record<string, { label: string; icon: string }> = {
   changes_requested: { label: "Modification demandée", icon: "↩️" },
   reopen_requested: { label: "Réouverture demandée", icon: "🔓" },
   reopen_approved: { label: "Réouverture acceptée", icon: "🔓" },
+  reopen_rejected: { label: "Réouverture refusée", icon: "🚫" },
+  manager_override: { label: "Semaine modifiée et validée par le manager", icon: "🛠️" },
+  absence_conflict_reopened: { label: "Réouverte automatiquement (conflit avec une absence)", icon: "⚠️" },
 };
 
 function formatDateTime(iso: string): string {

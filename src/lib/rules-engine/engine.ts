@@ -1,4 +1,4 @@
-import { addDaysStr, findHoliday, isHoliday, isoWeekday, weekDates } from "./calendar";
+import { addDaysStr, findHoliday, nextWorkingDay, previousWorkingDay, weekDates } from "./calendar";
 import type {
   AbsencePeriod,
   DayEvaluation,
@@ -30,6 +30,15 @@ function exceptionAt(date: string, exceptions: ExceptionPeriod[]) {
 }
 
 /**
+ * Le jour `date` tombe-t-il dans une période d'absence ? Un jour d'absence
+ * ne doit jamais pouvoir rester marqué télétravail (section 7 : une absence
+ * ajoutée après coup doit invalider un télétravail déjà posé ce jour-là).
+ */
+function onAbsence(date: string, absences: AbsencePeriod[]): AbsencePeriod | null {
+  return absences.find((a) => date >= a.startDate && date <= a.endDate) ?? null;
+}
+
+/**
  * Le jour `date` est-il un "jour de reprise" obligatoire au bureau,
  * c'est-à-dire le premier jour ouvré suivant une absence qui déclenche la
  * règle (en franchissant éventuellement un week-end et/ou un jour férié) ?
@@ -43,13 +52,30 @@ function returnAfterAbsence(
   if (!settings.returnAfterAbsenceForbidden) return null;
   for (const absence of absences) {
     if (!absence.triggersReturnRule) continue;
-    let d = addDaysStr(absence.endDate, 1);
-    for (let i = 0; i < 30; i++) {
-      const weekend = isoWeekday(d) >= 6;
-      const holiday = settings.returnAfterBridgeEnabled && isHoliday(d, holidays);
-      if (!weekend && !holiday) break;
-      d = addDaysStr(d, 1);
-    }
+    const d = nextWorkingDay(addDaysStr(absence.endDate, 1), holidays, settings.returnAfterBridgeEnabled);
+    if (d === date) return absence;
+  }
+  return null;
+}
+
+/**
+ * Symétrique de `returnAfterAbsence` : le jour `date` est-il le dernier jour
+ * ouvré précédant une absence qui déclenche la règle ? On raisonne en
+ * "dernier jour réellement travaillé", jamais en simple J-1 — `previousWorkingDay`
+ * remonte au-delà d'un week-end et, si activé, d'un jour férié, exactement
+ * comme `nextWorkingDay` le fait déjà pour la reprise (section "avant/après
+ * absence, règle symétrique").
+ */
+function beforeAbsence(
+  date: string,
+  absences: AbsencePeriod[],
+  holidays: { date: string; name: string; status: "provisional" | "confirmed" }[],
+  settings: RuleSettings
+): AbsencePeriod | null {
+  if (!settings.returnAfterAbsenceForbidden) return null;
+  for (const absence of absences) {
+    if (!absence.triggersReturnRule) continue;
+    const d = previousWorkingDay(addDaysStr(absence.startDate, -1), holidays, settings.returnAfterBridgeEnabled);
     if (d === date) return absence;
   }
   return null;
@@ -93,11 +119,29 @@ function baselineForDay(
     };
   }
 
-  const absence = returnAfterAbsence(date, absences, holidays, settings);
-  if (absence) {
+  const activeAbsence = onAbsence(date, absences);
+  if (activeAbsence) {
+    return {
+      ruleCode: "ON_ABSENCE",
+      reason: activeAbsence.typeName ?? "Absence",
+      severity: "blocking",
+    };
+  }
+
+  const returnAbsence = returnAfterAbsence(date, absences, holidays, settings);
+  if (returnAbsence) {
     return {
       ruleCode: "RETURN_AFTER_ABSENCE",
       reason: "Bureau obligatoire – reprise après absence",
+      severity: "blocking",
+    };
+  }
+
+  const upcomingAbsence = beforeAbsence(date, absences, holidays, settings);
+  if (upcomingAbsence) {
+    return {
+      ruleCode: "BEFORE_ABSENCE",
+      reason: "Bureau obligatoire – veille d'une absence",
       severity: "blocking",
     };
   }

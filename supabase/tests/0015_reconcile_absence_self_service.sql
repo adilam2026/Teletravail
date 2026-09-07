@@ -55,7 +55,14 @@ begin
   raise notice '--- auth.uid() simulé = % (doit être identique à l''employé ci-dessus)', auth.uid();
 
   -- 3. Réconciliation : une absence commençant jeudi invalide ce mercredi.
-  select public.reconcile_week_absence_conflict(v_plan_id_1, array[v_wednesday::text]) into v_result;
+  -- `select * into v_result from function(...)` (et non `select function(...)
+  -- into v_result`) : c'est la syntaxe correcte en PL/pgSQL pour récupérer
+  -- dans une variable-ligne le résultat d'une fonction renvoyant un type
+  -- composite — l'autre forme tente d'assigner la ligne entière au premier
+  -- champ (uuid) de la variable et échoue avec "invalid input syntax for
+  -- type uuid" (observé en le testant, corrigé ici ; n'affecte que ce script
+  -- de vérification, pas la fonction elle-même ni l'appel réel via PostgREST).
+  select * into v_result from public.reconcile_week_absence_conflict(v_plan_id_1, array[v_wednesday::text]);
 
   select count(*) into v_remaining_count from telework_days where weekly_plan_id = v_plan_id_1 and work_date = v_wednesday;
   select count(*) into v_event_count from weekly_plan_events where weekly_plan_id = v_plan_id_1 and event_type = 'absence_conflict_reopened';

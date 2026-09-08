@@ -25,6 +25,9 @@ export type ExceptionTypeCode =
   | "custom_period";
 export type ExceptionScopeCode = "company" | "squad" | "employee";
 export type AbsenceSourceCode = "hierarchy" | "admin" | "employee" | "rh_import";
+export type AbsenceStatus = "draft" | "submitted" | "validated" | "needs_changes" | "cancelled";
+export type AbsenceVersionDecisionCode = "validated" | "changes_requested";
+export type AbsenceRequestKind = "modification" | "cancellation";
 
 export type ProfileRow = {
   id: string;
@@ -288,6 +291,11 @@ export type AbsenceRow = {
   source: AbsenceSourceCode;
   created_by: string | null;
   created_at: string;
+  status: AbsenceStatus;
+  submitted_at: string | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  manager_comment: string | null;
 }
 
 export type AbsenceInsert = {
@@ -298,6 +306,79 @@ export type AbsenceInsert = {
   comment?: string | null;
   source?: AbsenceSourceCode;
   created_by?: string | null;
+  status?: AbsenceStatus;
+  submitted_at?: string | null;
+  decided_at?: string | null;
+  decided_by?: string | null;
+  manager_comment?: string | null;
+}
+
+export type AbsenceVersionRow = {
+  id: string;
+  absence_id: string;
+  version_number: number;
+  absence_type_id: string;
+  start_date: string;
+  end_date: string;
+  comment: string | null;
+  submitted_at: string;
+  submitted_by: string | null;
+  decision: AbsenceVersionDecisionCode | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  decision_comment: string | null;
+  created_at: string;
+}
+
+export type AbsenceEventRow = {
+  id: string;
+  absence_id: string;
+  version_number: number | null;
+  event_type: string;
+  occurred_at: string;
+  actor_id: string | null;
+  actor_role: AppRole | null;
+  status_before: AbsenceStatus | null;
+  status_after: AbsenceStatus | null;
+  old_value: unknown;
+  new_value: unknown;
+  comment: string | null;
+}
+
+export type AbsenceEventInsert = {
+  absence_id: string;
+  version_number?: number | null;
+  event_type: string;
+  actor_id?: string | null;
+  actor_role?: AppRole | null;
+  status_before?: AbsenceStatus | null;
+  status_after?: AbsenceStatus | null;
+  old_value?: unknown;
+  new_value?: unknown;
+  comment?: string | null;
+}
+
+export type AbsenceReopenRequestRow = {
+  id: string;
+  absence_id: string;
+  employee_id: string;
+  requested_by: string | null;
+  kind: AbsenceRequestKind;
+  requested_at: string;
+  reason: string | null;
+  status: ReopenRequestStatus;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_comment: string | null;
+  created_at: string;
+}
+
+export type AbsenceReopenRequestInsert = {
+  absence_id: string;
+  employee_id: string;
+  requested_by?: string | null;
+  kind: AbsenceRequestKind;
+  reason?: string | null;
 }
 
 export type PublicHolidayRow = {
@@ -442,6 +523,9 @@ export type Database = {
       week_reopen_requests: Table<WeekReopenRequestRow, WeekReopenRequestInsert, Partial<WeekReopenRequestRow>>;
       absence_types: Table<AbsenceTypeRow, AbsenceTypeInsert, Partial<AbsenceTypeRow>>;
       absences: Table<AbsenceRow, AbsenceInsert, Partial<AbsenceRow>>;
+      absence_versions: Table<AbsenceVersionRow, never, Partial<AbsenceVersionRow>>;
+      absence_events: Table<AbsenceEventRow, AbsenceEventInsert, Partial<AbsenceEventRow>>;
+      absence_reopen_requests: Table<AbsenceReopenRequestRow, AbsenceReopenRequestInsert, Partial<AbsenceReopenRequestRow>>;
       public_holidays: Table<PublicHolidayRow, PublicHolidayInsert, Partial<PublicHolidayRow>>;
       company_exceptions: Table<CompanyExceptionRow, CompanyExceptionInsert, Partial<CompanyExceptionRow>>;
       telework_rules: Table<TeleworkRuleRow, TeleworkRuleInsert, Partial<TeleworkRuleRow>>;
@@ -485,6 +569,38 @@ export type Database = {
       reconcile_week_absence_conflict: {
         Args: { p_plan_id: string; p_invalid_dates: string[] };
         Returns: WeeklyPlanRow | null;
+      };
+      create_absence: {
+        Args: { p_employee_id: string; p_absence_type_id: string; p_start_date: string; p_end_date: string; p_comment: string | null };
+        Returns: AbsenceRow | null;
+      };
+      submit_absence: {
+        Args: { p_absence_id: string };
+        Returns: AbsenceRow | null;
+      };
+      recall_absence: {
+        Args: { p_absence_id: string };
+        Returns: AbsenceRow | null;
+      };
+      decide_absence: {
+        Args: { p_absence_id: string; p_decision: AbsenceVersionDecisionCode; p_comment: string | null };
+        Returns: AbsenceRow | null;
+      };
+      decide_absence_reopen_request: {
+        Args: { p_request_id: string; p_approve: boolean; p_comment: string | null };
+        Returns: AbsenceReopenRequestRow | null;
+      };
+      manager_validate_absence_now: {
+        Args: { p_absence_id: string };
+        Returns: AbsenceRow | null;
+      };
+      manager_cancel_absence: {
+        Args: { p_absence_id: string; p_comment: string | null };
+        Returns: AbsenceRow | null;
+      };
+      manager_request_absence_changes: {
+        Args: { p_absence_id: string; p_comment: string | null };
+        Returns: AbsenceRow | null;
       };
     };
     Enums: { [_ in never]: never };

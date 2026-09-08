@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { WEEKDAY_LABELS } from "@/lib/rules-engine/calendar";
 import {
   validateWeek,
@@ -13,6 +13,7 @@ import {
 import { useWeekEditor } from "@/components/calendar/useWeekEditor";
 import { toast } from "@/lib/toast";
 import { StatusBadge } from "@/components/StatusBadge";
+import { KebabMenu } from "@/components/KebabMenu";
 import type { PlanStatus, AppRole } from "@/lib/supabase/database.types";
 import type { TeamPresenceDay, DayEvaluation } from "@/lib/rules-engine/types";
 import type { GroupDayKind, PendingReopenRequest } from "@/lib/data/hierarchy";
@@ -95,59 +96,6 @@ const LEGEND: { icon: string; label: string }[] = [
   { icon: "🇲🇦", label: "Jour férié" },
 ];
 
-/**
- * Petit menu "⋯" pour les actions secondaires (section 12-13 du cahier des
- * charges "Décision") : jamais plus d'un bouton principal visible par ligne —
- * le reste reste accessible sans jamais accumuler de boutons, essentiel pour
- * qu'un planning de 15-20 collaborateurs reste lisible.
- */
-function KebabMenu({ items }: { items: { label: string; onClick: () => void; tone?: "default" | "danger" }[] }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, [open]);
-
-  if (items.length === 0) return null;
-
-  return (
-    <div className="relative inline-block" ref={ref}>
-      <button
-        type="button"
-        className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-400 hover:bg-slate-100"
-        aria-label="Plus d'actions"
-        onClick={() => setOpen((v) => !v)}
-      >
-        ⋯
-      </button>
-      {open && (
-        <div className="absolute right-0 z-10 mt-1 w-52 rounded-lg border border-slate-100 bg-white py-1 shadow-elevated">
-          {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              className={`block w-full px-3 py-1.5 text-left text-xs font-medium hover:bg-slate-50 ${
-                item.tone === "danger" ? "text-rose-600" : "text-slate-700"
-              }`}
-              onClick={() => {
-                setOpen(false);
-                item.onClick();
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** Libellé de statut, y compris l'état "réouverture demandée" propre à ce tableau (absent de `StatusBadge` générique). */
 function StatusCell({ m, status }: { m: TeamPlanningMember; status: PlanStatus | "not_submitted" }) {

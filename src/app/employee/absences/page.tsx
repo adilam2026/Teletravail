@@ -1,7 +1,10 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { todayInCasablanca } from "@/lib/date/casablanca";
-import { CreateSelfAbsenceForm, EditableAbsenceRow } from "@/components/employee/SelfAbsenceForm";
+import { CreateSelfAbsenceForm, EditableAbsenceRow, type SelfAbsenceRecord } from "@/components/employee/SelfAbsenceForm";
+import { AbsenceHistoryButton } from "@/components/employee/AbsenceHistoryButton";
+import { AbsenceStatusBadge } from "@/components/AbsenceStatusBadge";
+import type { AbsenceRequestKind, ReopenRequestStatus } from "@/lib/supabase/database.types";
 
 export default async function EmployeeAbsencesPage() {
   const { profile } = await requireUser();
@@ -11,7 +14,7 @@ export default async function EmployeeAbsencesPage() {
   const [{ data: absences }, { data: holidays }, { data: types }, { data: setting }] = await Promise.all([
     supabase
       .from("absences")
-      .select("id, absence_type_id, start_date, end_date, comment, source, created_by, absence_types(name)")
+      .select("id, absence_type_id, start_date, end_date, comment, source, created_by, status, manager_comment, absence_types(name)")
       .eq("employee_id", profile.id)
       .order("start_date", { ascending: false }),
     supabase.from("public_holidays").select("*").gte("date", today).order("date", { ascending: true }).limit(8),
@@ -21,6 +24,25 @@ export default async function EmployeeAbsencesPage() {
 
   const selfServiceEnabled = setting?.value === true;
   const typeOptions = (types ?? []).map((t) => ({ id: t.id, name: t.name }));
+
+  const absenceIds = (absences ?? []).map((a) => a.id);
+  const { data: requests } = absenceIds.length
+    ? await supabase
+        .from("absence_reopen_requests")
+        .select("id, absence_id, kind, status, requested_at")
+        .in("absence_id", absenceIds)
+        .order("requested_at", { ascending: false })
+    : { data: [] as { id: string; absence_id: string; kind: AbsenceRequestKind; status: ReopenRequestStatus; requested_at: string }[] };
+
+  // Trié par `requested_at desc` : la première ligne rencontrée par absence
+  // est bien la plus récente, quel que soit son statut (permet d'afficher
+  // aussi bien "en attente" que "refusée").
+  const latestRequestByAbsence = new Map<string, { id: string; kind: AbsenceRequestKind; status: ReopenRequestStatus }>();
+  for (const r of requests ?? []) {
+    if (!latestRequestByAbsence.has(r.absence_id)) {
+      latestRequestByAbsence.set(r.absence_id, { id: r.id, kind: r.kind, status: r.status });
+    }
+  }
 
   const creatorIds = [...new Set((absences ?? []).map((a) => a.created_by).filter((id): id is string => !!id && id !== profile.id))];
   const { data: creators } = creatorIds.length
@@ -43,6 +65,17 @@ export default async function EmployeeAbsencesPage() {
           const type = (a as unknown as { absence_types: { name: string } | null }).absence_types;
           const isFuture = a.start_date >= today;
           const addedByOther = a.created_by && a.created_by !== profile.id;
+          const record: SelfAbsenceRecord = {
+            id: a.id,
+            absenceTypeId: a.absence_type_id,
+            typeName: type?.name ?? null,
+            startDate: a.start_date,
+            endDate: a.end_date,
+            comment: a.comment,
+            status: a.status,
+            managerComment: a.manager_comment,
+            latestRequest: latestRequestByAbsence.get(a.id) ?? null,
+          };
           return (
             <div key={a.id} className="px-5 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -52,22 +85,20 @@ export default async function EmployeeAbsencesPage() {
                       {type?.name ?? "Absence"}
                       {!isFuture && <span className="ml-2 text-xs font-normal text-slate-400">Passée</span>}
                     </p>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                      ✓ Confirmée
-                    </span>
+                    <AbsenceStatusBadge status={a.status} />
+                    <AbsenceHistoryButton absenceId={a.id} compact />
                   </div>
                   <p className="text-xs text-slate-400">
                     Du {a.start_date} au {a.end_date}
                     {addedByOther && ` · Ajoutée par ${creatorNameById.get(a.created_by!) ?? "votre hiérarchie"}`}
                   </p>
                   {a.comment && <p className="mt-1 text-xs text-slate-500">{a.comment}</p>}
+                  {a.status === "needs_changes" && a.manager_comment && (
+                    <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">« {a.manager_comment} »</p>
+                  )}
+                  {a.status === "cancelled" && a.manager_comment && <p className="mt-1 text-xs text-slate-500">{a.manager_comment}</p>}
                 </div>
-                {isFuture && selfServiceEnabled && (
-                  <EditableAbsenceRow
-                    absence={{ id: a.id, absenceTypeId: a.absence_type_id, startDate: a.start_date, endDate: a.end_date, comment: a.comment }}
-                    types={typeOptions}
-                  />
-                )}
+                {isFuture && selfServiceEnabled && <EditableAbsenceRow absence={record} types={typeOptions} />}
               </div>
             </div>
           );

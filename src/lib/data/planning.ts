@@ -60,10 +60,15 @@ export async function getAbsencesForEmployee(
   start: string,
   end: string
 ): Promise<AbsencePeriod[]> {
+  // Une absence "annulée" (section 19 du cahier des charges "workflow congés")
+  // ne doit plus jamais verrouiller de jour de télétravail — tous les autres
+  // statuts (brouillon inclus) restent actifs pour le moteur de règles,
+  // exactement comme avant l'introduction du workflow de validation.
   const { data } = await supabase
     .from("absences")
     .select("start_date, end_date, absence_types(triggers_return_rule, name)")
     .eq("employee_id", employeeId)
+    .neq("status", "cancelled")
     .gte("end_date", start)
     .lte("start_date", end);
 

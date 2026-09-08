@@ -35,9 +35,11 @@ export async function buildNavForRole(supabase: AppSupabaseClient, profile: Prof
     } else if (profile.role === "tribe_lead") {
       items.push({ href: "/tribe/planning", label: "Planning équipe", icon: "📆", badge: pending, section: "Mon équipe" });
       items.push({ href: "/tribe/overview", label: "Ma Tribe", icon: "🧭", section: "Mon équipe" });
+      items.push({ href: "/tribe/absences", label: "Absences de la Tribe", icon: "🌴", section: "Mon équipe" });
     } else {
       items.push({ href: "/du/planning", label: "Planning équipe", icon: "📆", badge: pending, section: "Mon équipe" });
       items.push({ href: "/du/overview", label: "Ma DU", icon: "🏛️", section: "Mon équipe" });
+      items.push({ href: "/du/absences", label: "Absences de la DU", icon: "🌴", section: "Mon équipe" });
     }
   }
 

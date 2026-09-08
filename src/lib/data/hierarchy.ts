@@ -1,6 +1,6 @@
 import "server-only";
 import type { AppSupabaseClient as DB } from "@/lib/supabase/server";
-import type { OrganizationalUnitRow, PlanStatus, ProfileRow, SquadRow, TribeRow } from "@/lib/supabase/database.types";
+import type { AbsenceRequestKind, AbsenceStatus, OrganizationalUnitRow, PlanStatus, ProfileRow, SquadRow, TribeRow } from "@/lib/supabase/database.types";
 import { weekDates } from "@/lib/rules-engine/calendar";
 import { getExceptionsFor, getHolidaysInRange, getRuleSettings, buildDayBadge, type DayBadge } from "@/lib/data/planning";
 import { evaluateTeamPresence } from "@/lib/rules-engine/engine";
@@ -322,4 +322,83 @@ export async function loadGroupWeek(supabase: DB, members: ProfileRow[], weekSta
   const presence = evaluateTeamPresence(dates, officeCounts, settings);
 
   return { members: memberWeeks, presence };
+}
+
+export interface AbsencePendingRequest {
+  id: string;
+  kind: AbsenceRequestKind;
+  reason: string | null;
+  requestedAt: string;
+}
+
+export interface AbsenceOverviewItem {
+  id: string;
+  employeeId: string;
+  absenceTypeId: string;
+  typeName: string | null;
+  startDate: string;
+  endDate: string;
+  comment: string | null;
+  status: AbsenceStatus;
+  managerComment: string | null;
+  createdBy: string | null;
+  pendingRequest: AbsencePendingRequest | null;
+}
+
+/**
+ * Absences d'un groupe de collaborateurs, enrichies de la demande de
+ * réouverture (modification/annulation) en attente le cas échéant — un seul
+ * aller-retour groupé, réutilisé par les vues Squad / Tribe / DU / Admin
+ * (section 23 "Espace manager" du cahier des charges "workflow congés"),
+ * même principe que `loadGroupWeek` pour le planning télétravail.
+ */
+export async function loadAbsencesForMembers(supabase: DB, members: ProfileRow[]): Promise<AbsenceOverviewItem[]> {
+  const memberIds = members.map((m) => m.id);
+  if (memberIds.length === 0) return [];
+
+  const [{ data: absences }, { data: requests }] = await Promise.all([
+    supabase
+      .from("absences")
+      .select("id, employee_id, absence_type_id, start_date, end_date, comment, status, manager_comment, created_by, absence_types(name)")
+      .in("employee_id", memberIds)
+      .order("start_date", { ascending: false })
+      .limit(300),
+    supabase
+      .from("absence_reopen_requests")
+      .select("id, absence_id, kind, reason, requested_at")
+      .in("employee_id", memberIds)
+      .eq("status", "pending"),
+  ]);
+
+  const requestByAbsence = new Map((requests ?? []).map((r) => [r.absence_id, r]));
+
+  return (
+    (absences ?? []) as unknown as {
+      id: string;
+      employee_id: string;
+      absence_type_id: string;
+      start_date: string;
+      end_date: string;
+      comment: string | null;
+      status: AbsenceStatus;
+      manager_comment: string | null;
+      created_by: string | null;
+      absence_types: { name: string } | null;
+    }[]
+  ).map((a) => {
+    const request = requestByAbsence.get(a.id);
+    return {
+      id: a.id,
+      employeeId: a.employee_id,
+      absenceTypeId: a.absence_type_id,
+      typeName: a.absence_types?.name ?? null,
+      startDate: a.start_date,
+      endDate: a.end_date,
+      comment: a.comment,
+      status: a.status,
+      managerComment: a.manager_comment,
+      createdBy: a.created_by,
+      pendingRequest: request ? { id: request.id, kind: request.kind, reason: request.reason, requestedAt: request.requested_at } : null,
+    };
+  });
 }
